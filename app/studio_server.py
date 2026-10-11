@@ -287,8 +287,9 @@ def find_shots(src, limit, min_len=2.5, max_len=8.0, max_shots=12):      # 10-10
 def run_recreate(job):
     p = job["params"]; d = f"{LIB}/{job['id']}"; src_dir = f"{d}/source"; os.makedirs(src_dir, exist_ok=True)
     job["progress"].update(phase="downloading the Short, separating its speech, transcribing it"); save()
-    vworker("capture", p["url"], src_dir, t=2400)
+    vworker("capture", p["url"], src_dir, *(["1080"] if p.get("style") == "faithful" else []), t=2400)    # Faithful: capture up to 1080p (sharper anchor frames)
     meta = json.load(open(f"{src_dir}/transcript.json")); src = f"{src_dir}/source.mp4"
+    _pr = stitch.probe(src); dims = W.shape_dims(p["preset"], _pr["w"], _pr["h"], p.get("shape", "auto")); p["dims"] = list(dims)
     shots = find_shots(src, float(p["max_seconds"]))
     if not shots: raise RuntimeError("no shots found in that video")
     words = meta.get("words") or []
@@ -303,23 +304,24 @@ def run_recreate(job):
     p.update(shots=plan, title=meta.get("title", ""), uploader=meta.get("uploader", ""), prompt=f"Remake of \"{meta.get('title', '')[:80]}\"" + (f" — {p['notes']}" if p.get("notes") else ""),
              seconds=round(sum(x["dur"] for x in plan), 2)); save()
     ims, au = cast_refs(p, job["id"]); done = []
-    for k, sh in enumerate(plan):
+    if p.get("style") == "faithful": done = faithful_shots(job, plan, src, d, dims, ims)
+    for k, sh in enumerate(plan if p.get("style") != "faithful" else []):
         wait_cool(job)
         job["progress"].update(seg=k + 1, segs=len(plan), step=0, steps=0, phase=f"shot {k + 1} of {len(plan)} · {sh['dur']:g} s with your cast"); save()
         prompt = subjects(p, au and sh["words"]) + official(sh["prompt"]) + (f'\n\n<Subject 1> says, "{sh["words"]}"' if sh["words"] else "")
-        g, info = W.cast_graph(p["preset"], prompt, sh["dur"], int(p["seed"]) + k, f"studio/{job['id']}_s{k + 1}", ims, au, vae8=bool(p.get("vae8")))
+        g, info = W.cast_graph(p["preset"], prompt, sh["dur"], int(p["seed"]) + k, f"studio/{job['id']}_s{k + 1}", ims, au, vae8=bool(p.get("vae8")), dims=dims)
         pid = comfy_post(g); job["progress"]["engine"] = info["engine"]; save()
         files = [f for f in comfy_wait(pid, job) if f.endswith(".mp4") and os.path.basename(f).startswith(f"{job['id']}_s{k + 1}_")]
         if not files: raise RuntimeError(f"shot {k + 1} produced no video")
         seg = f"{d}/seg{k + 1:02d}.mp4"; shutil.move(files[0], seg)
         def rerender(pr, bump, k=k, sh=sh):
-            g2, _ = W.cast_graph(p["preset"], pr, sh["dur"], int(p["seed"]) + k + bump, f"studio/{job['id']}_s{k + 1}r", ims, au, vae8=bool(p.get("vae8")))
+            g2, _ = W.cast_graph(p["preset"], pr, sh["dur"], int(p["seed"]) + k + bump, f"studio/{job['id']}_s{k + 1}r", ims, au, vae8=bool(p.get("vae8")), dims=dims)
             fs = [f for f in comfy_wait(comfy_post(g2), job) if f.endswith(".mp4") and os.path.basename(f).startswith(f"{job['id']}_s{k + 1}r_")]
             if not fs: raise RuntimeError(f"shot {k + 1} re-take produced no video")
             out = f"{d}/seg{k + 1:02d}.retake.mp4"; shutil.move(fs[0], out); return out
         seg = directed(job, k, seg, prompt, rerender); done.append(seg)
         job["outputs"] = [{"file": os.path.basename(x), "kind": "segment"} for x in done]; save()
-    if p.get("soundtrack", "new") != "new":
+    if p.get("soundtrack", "new") != "new" or p.get("style") == "faithful":          # faithful shots are already cut to the original's timing
         main = original_sound(job, plan, done, src_dir, d)
     else:
         if len(done) > 1:
@@ -333,6 +335,93 @@ def run_recreate(job):
     stitch.poster(main, f"{d}/poster.jpg", at=min(1.5, max(0.2, stitch.probe(main)["dur"] / 3)))
     job["outputs"].insert(0, {"file": os.path.basename(main), "kind": "film" if len(done) > 1 else "video", "poster": "poster.jpg"})
     job["outputs"].append({"file": "source/source.mp4", "kind": "original Short"})
+
+
+def faithful_shots(job, plan, src, d, dims, ims):
+    """the remake follows the original frame by frame. The director picks out the performer once, and a clean studio portrait of the cast is
+    made once. Inside every shot, anchor frames about 1.2 s apart are taken from the Short (the last one 3 frames before the cut); the director
+    checks each one, and only where the performer's face is visible is the cast swapped in with the image editor (references: that frame + the
+    portrait, never an earlier swap). H3 animates between neighbouring anchors (first + last frame) with a neutral one-continuous-shot prompt;
+    each clip is retimed to the exact time between its anchors and nothing is animated across a cut.
+    -> one video per shot (segNN.mp4), each the shot's own length"""
+    p = job["params"]; Wd, Hd = dims; fd = f"{d}/faithful"; os.makedirs(fd, exist_ok=True)
+    anchors = []
+    for sh in plan:
+        S = sh["end"] - sh["start"]; g = max(1, round(S / 1.2))               # ~1.2 s apart: less room for H3 to invent a face between anchors
+        anchors.append([sh["start"] + j * S / g for j in range(g)] + [sh["end"] - 3.0 / W.FPS])     # 3 frames in: a seek at the very end can return nothing
+    total = sum(len(t) for t in anchors); n = 0; edited = []
+    job["progress"].update(phase="the director is picking out the performer; making a clean portrait of your cast"); save()
+    who = DIR.who_is_performer(src); p["performer"] = who
+    pid = comfy_post(W.edit_graph(ims[:3], "Make a clean studio portrait of this exact person: the same face, facial features, skin tone, hair and beard, "
+                                  "unchanged. Head and shoulders, looking straight at the camera, neutral expression, plain light grey background, soft even "
+                                  "light. No hat, no text, no phone screen, no icons.", int(p["seed"]) + 3, f"studio/{job['id']}_card"))
+    fs = [f for f in comfy_wait(pid, job) if f.lower().endswith(".png") and os.path.basename(f).startswith(f"{job['id']}_card")]
+    if not fs: raise RuntimeError("could not make the cast portrait")
+    card_png = f"{fd}/cast_portrait.png"; shutil.move(fs[0], card_png); card = to_input(card_png, f"studio_{job['id']}_card.png"); swapped = 0
+    for i, ts in enumerate(anchors):                                            # 1) the cast into every anchor frame
+        row = []
+        for j, t in enumerate(ts):
+            n += 1; wait_cool(job)
+            job["progress"].update(seg=n, segs=total, step=0, steps=0, phase=f"putting your cast into frame {n} of {total}"); save()
+            raw = f"{fd}/a{i + 1:02d}_{j:02d}_orig.png"                         # twice the video size: the editor gets 4x the pixels for the face
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{t:.3f}", "-i", src, "-frames:v", "1", "-vf",
+                            f"scale={2 * Wd}:{2 * Hd}:force_original_aspect_ratio=increase:flags=lanczos,crop={2 * Wd}:{2 * Hd}", raw], capture_output=True)
+            if not os.path.exists(raw):                                         # exact (slower) seek as the fallback
+                subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", src, "-ss", f"{t:.3f}", "-frames:v", "1", "-vf",
+                                f"scale={2 * Wd}:{2 * Hd}:force_original_aspect_ratio=increase:flags=lanczos,crop={2 * Wd}:{2 * Hd}", raw], capture_output=True)
+            if not os.path.exists(raw): raise RuntimeError(f"could not read the Short's frame at {t:.2f} s")
+            out = f"{fd}/a{i + 1:02d}_{j:02d}.png"
+            try: c = DIR.check_frame(raw, who)
+            except Exception: c = {"present": False, "face_visible": False}
+            if not (c["present"] and c["face_visible"]):                      # the performer's face is not in this frame: keep it as it was
+                subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", raw, "-vf", f"scale={Wd}:{Hd}:flags=lanczos", out], capture_output=True); row.append(out); continue
+            mk = c["makeup"]; mk = "" if mk.lower().startswith(("none", "no ")) else f" Keep the {mk} on the new face, exactly as in image 1."
+            pr = (f"In image 1, replace only {who} ({c['where']}) with the person in image 2: give them that person's face, facial features, face shape, "
+                  f"beard and identity. Keep their facial expression ({c['expression']}), head angle and gaze exactly as in image 1.{mk} Do not change "
+                  "anyone else, their costume, pose, hands, framing, lighting, colours or background.")
+            pid = comfy_post(W.edit_graph([to_input(raw, f"studio_{job['id']}_f{n:03d}.png"), card], pr, int(p["seed"]) + 7, f"studio/{job['id']}_f{n:03d}"))
+            files = [f for f in comfy_wait(pid, job) if f.lower().endswith(".png") and os.path.basename(f).startswith(f"{job['id']}_f{n:03d}")]
+            if not files: raise RuntimeError(f"frame {n}: the cast swap produced no image")
+            big = f"{fd}/a{i + 1:02d}_{j:02d}_swap2x.png"; shutil.move(files[0], big)
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", big, "-vf", f"scale={Wd}:{Hd}:flags=lanczos", out], capture_output=True)
+            if not os.path.exists(out): raise RuntimeError(f"frame {n}: could not scale the swapped frame")
+            row.append(out); swapped += 1
+        edited.append(row)
+    p["faithful_frames"] = {"anchors": total, "swapped": swapped}
+    shots = []; m = 0; tot = sum(len(t) - 1 for t in anchors)
+    for i, (ts, row, sh) in enumerate(zip(anchors, edited, plan)):             # 2) H3 animates between neighbouring anchors
+        clips = []
+        for j in range(len(ts) - 1):
+            m += 1; wait_cool(job); G = ts[j + 1] - ts[j]
+            job["progress"].update(seg=m, segs=tot, step=0, steps=0, phase=f"animating {m} of {tot} · shot {i + 1} of {len(plan)}"); save()
+            a = to_input(row[j], f"studio_{job['id']}_k{m:03d}a.png"); b = to_input(row[j + 1], f"studio_{job['id']}_k{m:03d}b.png")
+            cp = ("One continuous shot with no cut. Keep exactly the scene, setting, people, costumes, makeup, framing and lighting of the first and last "
+                  "frames; everything moves naturally and smoothly from the first frame to the last. Do not add new people, places or objects.")
+            if p.get("soundtrack") == "new": cp += "\n\n" + sh["prompt"]                # only the remake's own sound needs the director's sound line
+            g, info = W.video_graph(p["preset"], cp, G, int(p["seed"]) + m, f"studio/{job['id']}_c{m:03d}", first_image=a, last_image=b,
+                                    engine=p.get("engine", "comfy"), vae8=bool(p.get("vae8")), dims=dims)
+            pid = comfy_post(g); job["progress"]["engine"] = info["engine"]; save()
+            fs = [f for f in comfy_wait(pid, job) if f.endswith(".mp4") and os.path.basename(f).startswith(f"{job['id']}_c{m:03d}_")]
+            if not fs: raise RuntimeError(f"clip {m} produced no video")
+            raw = f"{fd}/c{m:03d}_raw.mp4"; shutil.move(fs[0], raw)
+            L = stitch.probe(raw)["frames"] or W.frames(G); k = G * W.FPS / max(1, L - 1)        # its (L-1) frame steps -> exactly G seconds
+            clip = f"{fd}/c{m:03d}.mp4"
+            r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", raw, "-filter_complex",
+                                f"[0:v]setpts=PTS*{k:.6f},fps={W.FPS},trim=0:{G:.4f},setpts=PTS-STARTPTS[v];"
+                                f"[0:a]atempo={max(0.5, min(2.0, 1 / k)):.6f},atrim=0:{G:.4f},asetpts=PTS-STARTPTS[a]",
+                                "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-crf", "16", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", clip],
+                               capture_output=True, text=True)
+            if r.returncode: raise RuntimeError("retiming a clip failed: " + (r.stderr or "")[-300:])
+            clips.append(clip)
+        shot = f"{d}/seg{i + 1:02d}.mp4"; ins = sum((["-i", c] for c in clips), []); nc = len(clips)
+        S = sh["end"] - sh["start"]                                              # the shot's exact length: hold the last frame for the few missing frames
+        r = subprocess.run(["ffmpeg", "-v", "error", "-y", *ins, "-filter_complex", "".join(f"[{x}:v][{x}:a]" for x in range(nc)) + f"concat=n={nc}:v=1:a=1[cv][ca];"
+                            f"[cv]tpad=stop_mode=clone:stop_duration=0.5,trim=0:{S:.4f},setpts=PTS-STARTPTS[v];[ca]apad,atrim=0:{S:.4f}[a]",
+                            "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-crf", "14", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "256k", shot],
+                           capture_output=True, text=True)
+        if r.returncode: raise RuntimeError(f"joining shot {i + 1} failed: " + (r.stderr or "")[-300:])
+        shots.append(shot); job["outputs"] = [{"file": os.path.basename(x), "kind": "segment"} for x in shots]; save()
+    return shots
 
 
 def original_sound(job, plan, done, src_dir, d):
@@ -357,6 +446,8 @@ def original_sound(job, plan, done, src_dir, d):
                         "-map", "[o]", "-ac", "2", "-ar", "44100", orig], capture_output=True, text=True)
     if r.returncode: raise RuntimeError("cutting to the original's timing failed: " + (r.stderr or "")[-300:])
     out = f"{d}/film.mp4"
+    if mode == "new":                                                           # faithful + the remake's own sound
+        os.replace(cut, out); return out
     if mode == "original":
         graph, extra = "[1:a]apad[a]", ["-i", orig]
     else:
@@ -549,6 +640,45 @@ def make_music(job, engine, style, lyrics, seconds, seed, tag, bpm=None, key=Non
     files = [f for f in comfy_wait(pid, job) if f.endswith(".flac") and os.path.basename(f).startswith(f"{job['id']}_{tag}")]
     if not files: raise RuntimeError("no music came back")
     return files[0], stitch.probe(files[0])["dur"] or 0
+
+
+def gm_pick(name, drums):
+    """the director's instrument name -> a GM program (0-127), "kit:<n>" for drums, or "mute"; None if nothing is close"""
+    import difflib
+    n = str(name or "").strip().lower()
+    if not n: return None
+    if n in ("mute", "none", "drop", "silent", "off"): return "mute"
+    if drums:
+        kits = {v.lower(): k for k, v in MT.KITS.items()}
+        hit = kits.get(n, kits.get(n + " kit"))                                   # (kit 0 is falsy: compare with None)
+        if hit is None: hit = next((v for k, v in kits.items() if n in k or k.split()[0] in n), None)
+        if hit is None:
+            m = difflib.get_close_matches(n, list(kits), n=1, cutoff=0.4); hit = kits[m[0]] if m else 0
+        return f"kit:{hit}"
+    gm = [x.lower() for x in MT.GM]
+    if n in gm: return gm.index(n)
+    m = difflib.get_close_matches(n, gm, n=1, cutoff=0.55)
+    if m: return gm.index(m[0])
+    hit = next((i for i, x in enumerate(gm) if n in x or x in n), None)
+    return hit
+
+
+def midi_arrange_api(b):
+    """{file, request} -> {parts: {ch: program | "kit:n" | "mute"}, names, style, restyle, strength, notes, by}"""
+    mid = str(b.get("file") or ""); path = os.path.realpath(os.path.join(ROOT, mid)); req = str(b.get("request") or "").strip()[:800]
+    if not path.startswith(ROOT + "/uploads/") or not path.endswith(".mid") or not os.path.isfile(path): raise ValueError("attach a MIDI file first")
+    if not req: raise ValueError("describe the sound you want, e.g. \"jazz trio with brushed drums\"")
+    info = midi_worker("inspect", path, t=60)
+    d = DIR.midi_arrange(info["parts"], req, info.get("bpm") or 120, info.get("seconds") or 30, MT.GM, list(MT.KITS.values()))
+    raw = {str(k): v for k, v in (d.get("parts") or {}).items()}; parts, names = {}, {}
+    for p in info["parts"]:
+        ch = str(p["channel"]); v = gm_pick(raw.get(ch), p.get("drums"))
+        if v is None: v = ("kit:0" if p.get("drums") else p.get("program", 0))      # unknown name: keep what the file had
+        parts[ch] = v; names[ch] = "mute" if v == "mute" else MT.KITS[int(v[4:])] if isinstance(v, str) else MT.GM[v]
+    try: strength = max(0.3, min(0.8, float(d.get("strength") or 0.55)))
+    except (TypeError, ValueError): strength = 0.55
+    return {"parts": parts, "names": names, "style": str(d.get("style") or "").strip(), "restyle": d.get("restyle") is True,
+            "strength": strength, "notes": str(d.get("notes") or "").strip(), "by": C.DIRECTOR_LABEL}
 
 
 def midi_worker(*args, t=600):
@@ -856,6 +986,7 @@ def midi_params(b):
     for k, v in (b.get("parts") or {}).items():
         ch = int(k)
         if not 0 <= ch <= 15: raise ValueError("bad MIDI channel")
+        if isinstance(v, str) and v.strip().isdigit(): v = int(v)                    # a program number sent as text
         if v == "mute" or (isinstance(v, str) and v.startswith("kit:") and int(v[4:]) in MT.KITS): parts[str(ch)] = v
         elif isinstance(v, int) and 0 <= v <= 127: parts[str(ch)] = v
         else: raise ValueError(f"bad instrument for channel {ch}")
@@ -896,7 +1027,8 @@ def recreate_params(b, preset):
             "notes": str(b.get("notes") or "")[:600], "keep_words": bool(b.get("keep_words", True)), "seed": int(b.get("seed") or int.from_bytes(os.urandom(3), "big")),
             "review": b.get("review") if b.get("review") in ("off", "note", "retake") else "retake", "cast_images": ims, "cast_voice": cv, "cast_consent": True,
             "prompt": "Remake of a Short", "seconds": float(b.get("max_seconds") or 30), "vae8": bool(b.get("vae8", True)) and W.vae8_ready(), **scorep(b),
-            **soundp(b)}
+            **soundp(b), "style": b.get("style") if b.get("style") in ("reimagine", "faithful") else "reimagine",
+            "shape": "landscape" if b.get("shape") == "landscape" else "auto", "engine": eng(b)["engine"]}
 
 
 def soundp(b):
@@ -1068,6 +1200,10 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, new_job("export", {"film": fj["id"], "preset": fj["params"].get("preset"), "seconds": fj["params"].get("seconds"),
                                                           "prompt": "edit of " + fj["params"].get("prompt", "")[:150]}))
             except (ValueError, TypeError, KeyError) as e: return self._send(400, {"error": str(e)})
+        if u.path == "/api/director/midi":                                    # the director arranges a MIDI file from words
+            try: return self._send(200, midi_arrange_api(b))
+            except ValueError as e: return self._send(400, {"error": str(e)[:300]})
+            except Exception as e: return self._send(500, {"error": f"{type(e).__name__}: {str(e)[:300]}"})
         if u.path == "/api/director/music":
             try: return self._send(200, DIR.music_brief(str(b.get("idea") or "")[:1000], float(b.get("seconds") or 60), b.get("engine") if b.get("engine") in ("fast", "best") else "fast"))
             except Exception as e: return self._send(500, {"error": str(e)[:300]})

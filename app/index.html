@@ -239,7 +239,9 @@ audio{height:34px}
     <div class="two"><div><div class="lbl">YouTube Shorts link</div><input id="rurl" placeholder="https://youtube.com/shorts/…"></div>
       <div class="two" style="gap:10px"><div><div class="lbl">Up to</div><select id="rmax"><option value="15">15 s</option><option value="30" selected>30 s</option><option value="45">45 s</option><option value="60">60 s</option></select></div>
         <div><div class="lbl">Quality</div><select id="rpreset"><option value="draft">Draft · 480p</option><option value="fasthd">Fast HD · 768p</option></select></div></div></div>
-    <div class="lbl">Changes <span class="dim">— optional, e.g. “set it in Paris at night”, “make it a cooking show”</span></div><input id="rnotes"></div>
+    <div class="two" style="margin-bottom:12px"><div><div class="lbl">Style</div><select id="rstyle" onchange="rStyle()"><option value="faithful">Faithful · follows the original frame by frame</option><option value="reimagine">Re-imagine · the director rewrites each shot</option></select></div>
+      <div><div class="lbl">Shape</div><select id="rshape" onchange="drawR()"><option value="auto">Same as the Short (vertical stays vertical)</option><option value="landscape">Landscape</option></select></div></div>
+    <div class="lbl">Changes <span class="dim">— optional, e.g. “set it in Paris at night”, “make it a cooking show” (Re-imagine)</span></div><input id="rnotes"></div>
   <div class="sec"><header><span class="n">2</span><h2>Your cast</h2><p>the face that replaces the performer</p></header>
     <div class="thumbset" id="rims"></div>
     <div class="row" style="margin-top:10px"><button class="ghost sm" onclick="$('uplr').click()">Add a face</button><span class="dim">up to 3 · a clear face on a plain background works best</span></div>
@@ -248,7 +250,7 @@ audio{height:34px}
     <div class="two"><div><div class="lbl">Voice</div><select id="rvoice"><option value="">Model's own voice</option></select></div>
       <div style="align-self:end"><label class="check"><input type="checkbox" id="rwords" checked> Keep the Short's spoken words</label></div></div></div>
   <div class="sec"><header><span class="n">3</span><h2>Finish</h2><p>sound, score and review</p></header>
-    <div class="two" style="margin-bottom:12px"><div><div class="lbl">Soundtrack</div><select id="rsound" onchange="drawR()"><option value="new">New sound · made with the picture</option><option value="music">Original music + your cast's voice</option><option value="original">Original audio, exactly</option></select></div>
+    <div class="two" style="margin-bottom:12px"><div><div class="lbl">Soundtrack</div><select id="rsound" onchange="drawR()"><option value="new">New sound · made with the picture</option><option value="music">Original music + your cast's voice</option><option value="original" selected>Original audio, exactly</option></select></div>
       <div style="align-self:end"><span class="dim" id="rsoundp" style="font-size:12.5px"></span></div></div>
     <div class="two"><div><div class="lbl">Score</div><select id="rmusic"><option value="">No music</option><option value="fast">Fast · ACE-Step</option><option value="best">Best · MiniMax Music 3</option></select></div>
       <div><div class="lbl">Director review</div><select id="rreview"><option value="retake">Watch every shot · re-take a weak one once</option><option value="note">Notes only</option><option value="off">Off</option></select></div></div></div>
@@ -260,10 +262,14 @@ audio{height:34px}
     <div class="two"><div><div class="lbl">Engine</div><select id="meng" onchange="drawMusic(true)"><option value="fast">Fast · ACE-Step 1.5 Turbo</option><option value="best">Best · MiniMax Music 3</option><option value="midi">From a MIDI file · choose the instruments</option></select></div>
       <div class="two" style="gap:10px"><div><div class="lbl">Length (s)</div><select id="mlen"><option>15</option><option>30</option><option selected>60</option><option>90</option><option>120</option><option>180</option><option>240</option></select></div>
         <div><div class="lbl">Seed</div><input id="mseed" placeholder="random"></div></div></div>
+    <div class="row" style="margin-top:12px"><button class="ghost sm" onclick="attachMidi()">Attach a MIDI file</button><span class="dim">play your own notes with new instruments, or let the director re-arrange them from your words</span></div>
     <div id="mmidi" class="hide" style="margin-top:14px">
       <div class="row"><button class="ghost sm" onclick="$('uplm').click()">Upload a MIDI file</button><span id="mmidiinfo" class="dim">no file yet</span></div>
       <input type="file" id="uplm" accept=".mid,.midi,audio/midi,audio/x-midi" class="hide" onchange="uploadMidi(this)">
       <div id="mparts" style="margin-top:10px"></div>
+      <div id="marrbox" class="hide" style="margin-top:12px"><div class="lbl">Describe the new sound <span class="dim">— e.g. “jazz trio: piano, upright bass, brushed drums”, “epic orchestra with strings and horns”, “80s synth-pop”</span></div>
+        <div class="row" style="gap:10px;flex-wrap:nowrap"><input id="mreq" style="flex:1" placeholder="what should it sound like?"><button class="ghost sm" id="marrbtn" onclick="midiArrange()">Director: arrange it</button></div>
+        <div id="marrmsg" class="dim" style="margin-top:6px;font-size:12.5px"></div></div>
       <div class="two" style="margin-top:10px"><div class="two" style="gap:10px"><div><div class="lbl">Transpose</div><select id="mtrans"></select></div>
         <div><div class="lbl">Speed</div><select id="mspeed"><option value="0.75">75 %</option><option value="0.9">90 %</option><option value="1" selected>100 %</option><option value="1.1">110 %</option><option value="1.25">125 %</option><option value="1.5">150 %</option></select></div></div>
         <div><label class="check" style="margin-top:22px"><input type="checkbox" id="mrestyle" onchange="drawMusic(true)"> AI restyle with ACE-Step — keeps your notes, changes the sound</label>
@@ -385,12 +391,20 @@ let VSIG="";function drawVoices(){const V=S.voices||[];$("vn").textContent=V.len
 let MID=null;const GMFAM=["Piano","Chromatic percussion","Organ","Guitar","Bass","Strings","Ensemble","Brass","Reed","Pipe","Synth lead","Synth pad","Synth effects","Ethnic","Percussive","Sound effects"];
 function gmOptions(sel){const G=(S&&S.gm)||[];return GMFAM.map((f,i)=>`<optgroup label="${f}">${G.slice(i*8,i*8+8).map((n,k)=>`<option value="${i*8+k}" ${i*8+k==sel?"selected":""}>${esc(n)}</option>`).join("")}</optgroup>`).join("");}
 function kitOptions(sel){const K=(S&&S.kits)||{};return Object.entries(K).map(([k,n])=>`<option value="kit:${k}" ${"kit:"+k==sel?"selected":""}>Drum kit · ${esc(n)}</option>`).join("");}
+function attachMidi(){$("meng").value="midi";drawMusic(true);$("uplm").click();}
+async function midiArrange(){if(!MID){$("merr").textContent="attach a MIDI file first";return;}const req=$("mreq").value.trim();if(!req){$("merr").textContent="describe the new sound first";return;}
+ $("merr").textContent="";$("marrbtn").disabled=true;$("marrmsg").textContent="the director is reading your notes… (first use starts it: up to a minute)";
+ const [s,j]=await api("/api/director/midi",{file:MID.file,request:req});$("marrbtn").disabled=false;
+ if(j.error){$("marrmsg").textContent="";$("merr").textContent=j.error;return;}
+ Object.entries(j.parts).forEach(([ch,v])=>MID.map[+ch]=v);drawMidi();
+ if(j.style){$("mstyle").value=j.style;}$("mrestyle").checked=!!j.restyle;$("mstr").value=j.strength;$("mstrv").textContent=(+j.strength).toFixed(2);drawMusic(true);
+ $("marrmsg").textContent=`${j.notes||"arranged"}${j.restyle?" · AI restyle on — it re-renders the sound in that style":" · plain instrument swap (tick AI restyle for a fuller change)"} · by ${j.by}`;}
 async function uploadMidi(inp){const f=inp.files[0];if(!f)return;$("merr").textContent="";$("mmidiinfo").textContent="reading…";
  const r=await fetch("/api/midi/upload",{method:"POST",headers:{"Content-Type":"audio/midi","X-Studio":"1"},body:f});const j=await r.json();inp.value="";
  if(j.error){$("mmidiinfo").textContent="";$("merr").textContent=j.error;return;}MID={...j,name:f.name,map:{}};j.parts.forEach(p=>MID.map[p.channel]=p.drums?"kit:"+(p.program in (S.kits||{})?p.program:0):p.program);drawMidi();}
-function drawMidi(){if(!MID){$("mparts").innerHTML="";return;}$("mmidiinfo").textContent=`${MID.name} · ${MID.seconds} s · ${MID.bpm} BPM · ${MID.parts.length} part(s)`;
+function drawMidi(){$("marrbox").classList.toggle("hide",!MID);if(!MID){$("mparts").innerHTML="";return;}$("mmidiinfo").textContent=`${MID.name} · ${MID.seconds} s · ${MID.bpm} BPM · ${MID.parts.length} part(s)`;
  $("mparts").innerHTML=`<table style="width:100%;font-size:13px"><tr class=dim><td>Part</td><td>Notes</td><td>Plays as</td></tr>`+MID.parts.map(p=>`<tr><td>${p.drums?"Drums · ":""}${esc(p.name||"channel "+(p.channel+1))} <span class=dim>· ch ${p.channel+1} · was ${esc(p.instrument)}</span></td><td class=dim>${p.notes}</td>
-  <td><select onchange="MID.map[${p.channel}]=/^\d+$/.test(this.value)?+this.value:this.value"><option value="mute" ${MID.map[p.channel]=="mute"?"selected":""}>Mute</option>${p.drums?kitOptions(MID.map[p.channel]):gmOptions(MID.map[p.channel])}</select></td></tr>`).join("")+`</table>`;}
+  <td><select onchange="MID.map[${p.channel}]=/^[0-9]+$/.test(this.value)?+this.value:this.value"><option value="mute" ${MID.map[p.channel]=="mute"?"selected":""}>Mute</option>${p.drums?kitOptions(MID.map[p.channel]):gmOptions(MID.map[p.channel])}</select></td></tr>`).join("")+`</table>`;}
 let MSIG="";function drawMusic(force){if(!S)return;const mi=$("meng").value=="midi";$("mmidi").classList.toggle("hide",!mi);$("mstrbox").classList.toggle("hide",!$("mrestyle").checked);
  $("mstylelbl").firstChild.textContent=mi?"Restyle as ":"Describe the music ";["mlyrics","mfastopts","mdirbtn"].forEach(x=>{const el=$(x);(x=="mlyrics"?el.previousElementSibling:null)?.classList.toggle("hide",mi);el.classList.toggle("hide",mi||(x=="mfastopts"&&$("meng").value!="fast"));});
  $("mlen").parentElement.classList.toggle("hide",mi);if(!$("mtrans").options.length)$("mtrans").innerHTML=Array.from({length:25},(_,i)=>i-12).map(v=>`<option value="${v}" ${v==0?"selected":""}>${v>0?"+":""}${v} semitones</option>`).join("");if(mi&&MID&&force)drawMidi();const k=$("mkey");if(!k.options.length&&S.music_keys)k.innerHTML=S.music_keys.map(x=>`<option${x=="C major"?" selected":""}>${x}</option>`).join("");
@@ -455,12 +469,14 @@ async function uploadR(inp){const f=inp.files[0];if(!f)return;if(RC.length>=3){a
 function rDel(i){RC.splice(i,1);SS("studio_rcast",RC);drawR();}
 function drawR(){$("rims").innerHTML=RC.map((f,i)=>`<span style="position:relative;display:inline-block;margin-right:6px"><img src="/files/${esc(f)}" style="height:72px;border-radius:6px"><button class="ghost sm" style="position:absolute;top:2px;right:2px;padding:0 6px" onclick="rDel(${i})">×</button></span>`).join("")||`<span class=dim>no face yet</span>`;
  const vs=(S&&S.voices)||[],sel=$("rvoice"),sig=vs.map(v=>v.id).join(",");if(sel.dataset.sig!=sig){const cur=sel.value;sel.innerHTML=`<option value="">Model's own voice</option>`+vs.map(v=>`<option value="${esc(v.id)}">${esc(v.label)}</option>`).join("");sel.value=cur;sel.dataset.sig=sig;}
- const m=+$("rmax").value,hd=$("rpreset").value=="fasthd";$("rest").textContent=`≈ ${fmtT(Math.round((hd?36:12.5)*4*Math.pow(m/5,1)+60+25*Math.ceil(m/5)))} on the Spark (estimate)`;
+ const m=+$("rmax").value,hd=$("rpreset").value=="fasthd";const fa=$("rstyle").value=="faithful";$("rnotes").disabled=fa;
+ $("rest").textContent=`≈ ${fmtT(Math.round(fa?(m/1.2+m/7)*(hd?35:25)+(m/1.2)*(hd?80:35)+150:(hd?36:12.5)*4*Math.pow(m/5,1)+60+25*Math.ceil(m/5)))} on the Spark (estimate)`;
  const snd=$("rsound").value;$("rmusic").disabled=snd!="new";if(snd!="new")$("rmusic").value="";
  $("rsoundp").textContent=snd=="new"?"H3 makes the music, ambience and voices for every shot":snd=="music"?"the Short's music, its voices removed, under your cast's voices · shots cut to the original's timing":"the Short's own soundtrack · shots cut to the original's timing";}
+function rStyle(){if($("rstyle").value=="faithful"&&$("rsound").value=="new")$("rsound").value="original";drawR();}
 $("rmax").addEventListener("change",drawR);$("rpreset").addEventListener("change",drawR);
 async function recreate(){$("rerr").textContent="";const b={mode:"recreate",url:$("rurl").value.trim(),max_seconds:+$("rmax").value,preset:$("rpreset").value,notes:$("rnotes").value,
- cast_images:RC,cast_consent:$("rok").checked,cast_voice:$("rvoice").value,keep_words:$("rwords").checked,music:$("rmusic").value,soundtrack:$("rsound").value,review:$("rreview").value};
+ cast_images:RC,cast_consent:$("rok").checked,cast_voice:$("rvoice").value,keep_words:$("rwords").checked,music:$("rmusic").value,soundtrack:$("rsound").value,style:$("rstyle").value,shape:$("rshape").value,review:$("rreview").value};
  const [s,j]=await api("/api/jobs",b);if(s!=200){$("rerr").textContent=j.error||("HTTP "+s);return;}tab("queue");load();}
 let EDITS=LS("studio_edits",[]);
 function drawEdits(){$("editbox").classList.toggle("hide",F.mode!="image");$("editims").innerHTML=EDITS.map((f,i)=>`<span style="position:relative;display:inline-block;margin-right:6px"><span class="n" style="position:absolute;left:4px;top:2px;background:#0008;padding:0 5px;border-radius:4px;font-size:11px">${i+1}</span><img src="/files/${esc(f)}" style="height:80px;border-radius:6px"><button class="ghost sm" style="position:absolute;top:2px;right:2px;padding:0 6px" onclick="editDel(${i})">×</button></span>`).join("")||`<span class=dim>no image yet — without one, this makes new images</span>`;

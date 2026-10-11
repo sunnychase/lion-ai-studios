@@ -50,11 +50,11 @@ def stems(src, d):
     print(json.dumps({"ok": True, "vocals": f"{d}/vocals.wav", "music": f"{d}/music.wav"}))
 
 
-def capture(url, d):
+def capture(url, d, maxh=480):
     os.makedirs(d, exist_ok=True)
     if not url.startswith(("https://", "http://")): raise RuntimeError("paste a full https:// link")
     ytdlp = os.path.join(os.path.dirname(sys.executable), "yt-dlp")      # the studio's own, current yt-dlp (the system one is from 2024)
-    sh([ytdlp if os.path.exists(ytdlp) else "yt-dlp", "--no-playlist", "--max-filesize", "300M", "-f", "b[height<=480][ext=mp4]/bv*[height<=480]+ba/b", "--merge-output-format", "mp4",
+    sh([ytdlp if os.path.exists(ytdlp) else "yt-dlp", "--no-playlist", "--max-filesize", "300M", "-f", f"b[height<={maxh}][ext=mp4]/bv*[height<={maxh}]+ba/b", "--merge-output-format", "mp4",
         "-o", f"{d}/source.%(ext)s", "--print-to-file", "%(title)s\t%(duration)s\t%(uploader)s", f"{d}/info.txt", url], 600)
     src = next((f"{d}/{f}" for f in os.listdir(d) if f.startswith("source.")), None)
     if not src: raise RuntimeError("yt-dlp produced no file")
@@ -109,7 +109,7 @@ def say(d, text, out):
 if __name__ == "__main__":
     try:
         c = sys.argv[1]
-        if c == "capture": capture(sys.argv[2], sys.argv[3])
+        if c == "capture": capture(sys.argv[2], sys.argv[3], int(sys.argv[4]) if len(sys.argv) > 4 else 480)   # optional max height (Faithful Recreate asks for 1080)
         elif c == "cut": cut(sys.argv[2], sys.argv[3], sys.argv[4])
         elif c == "say": say(sys.argv[2], sys.argv[3], sys.argv[4])
         elif c == "stems": stems(sys.argv[2], sys.argv[3])

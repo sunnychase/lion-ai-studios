@@ -12,11 +12,11 @@ Video with sound · images · music · voices · a director that writes and revi
 |---|---|
 | **Video** | **MiniMax H3** makes picture and sound together. Start from text, from scout images, from your own first frame, or from several keyframes that become one film. Films up to **5 minutes** are chained from 15 s segments; every seam carries the previous segment's last frames *and* audio, so cuts are invisible. Four presets: Draft, **Fast HD** (default), Standard, High. |
 | **Image** | Ten image models behind one menu: Z-Image-Turbo, Qwen-Image 2.1 Turbo (2K, best at text), Krea 2, FLUX.2 klein, HiDream-O1, Chroma and more. **Edit** any image by describing the change (Qwen-Image 2.1 Turbo, up to 4 input images). |
-| **Music** | **Fast**: ACE-Step 1.5 Turbo, a minute of music in seconds, with lyrics. **Best**: MiniMax Music 3. **MIDI**: upload a `.mid`, pick an instrument for every part (all 128 General MIDI instruments and 8 drum kits), and optionally let the AI restyle it. |
-| **Director** | A vision-language model (Qwen3.8-27B) turns one sentence into a shot prompt with one beat per segment, **watches every rendered segment**, scores it, and re-takes a weak one once. |
+| **Music** | **Fast**: ACE-Step 1.5 Turbo, a minute of music in seconds, with lyrics. **Best**: MiniMax Music 3. **MIDI**: attach a `.mid`, pick an instrument for every part (all 128 General MIDI instruments and 8 drum kits), or describe the sound you want ("jazz trio with brushed drums") and let the **director arrange it**: it picks an instrument or kit for every part, mutes what does not fit, and turns on the AI restyle when instruments alone cannot get there. |
+| **Director** | A vision-language model (Qwen3.8-27B) turns one sentence into a shot prompt with one beat per segment, **watches every rendered segment**, scores it, and re-takes a weak one once. It also picks out the performer in a Short, checks every frame Recreate swaps, and arranges MIDI files from a description. |
 | **Voices** | Clone a voice from a short clip (Qwen3-TTS) for narration or on-camera lines. |
 | **Cast** | Put the person from up to 3 reference photos into the video (H3 reference-to-video, the official recipe). Consent checkbox required. |
-| **Recreate a Short** | Paste a YouTube Short. The director watches it shot by shot and re-shoots it with your cast, keeping the timing, the scene's makeup and costume, and optionally the spoken words. **Soundtrack:** new sound made with the picture, the original music under your cast's voices, or the original audio exactly. With the original sound, every shot is cut to the original's length so the cuts land on the beat. |
+| **Recreate a Short** | Paste a YouTube Short and recast it. **Faithful** (default) follows the original frame by frame: the director picks out the performer and checks anchor frames about 1.2 s apart inside every shot; only where the performer's face is visible is your cast swapped in (from one clean portrait, never from an earlier swap), and H3 animates between the anchors, each clip retimed to the exact gap. **Re-imagine** has the director re-describe each shot and re-shoots it with your cast, optionally with your changes. The output keeps the Short's shape (vertical stays vertical) unless you pick landscape. **Soundtrack:** the original audio exactly (default), the original music under your cast's voices, or new sound made with the picture. With the original sound, every shot is cut to the original's length so the cuts land on the beat. |
 | **Editor** | Re-take any segment, re-score the film, and export with crossfaded seams. |
 | **Library / Queue** | Everything you make, filterable. Renders keep going if you close the page. |
 
@@ -125,6 +125,7 @@ systemd/           unit templates (studio, ComfyUI, optional director)
 docs/              models, director, benchmarks, responsible use, screenshots
 benchmarks/        raw results and the scripts that produced them
 samples/           example videos, images and music made with the studio
+CHANGELOG.md       what changed in each update
 ```
 
 ## Responsible use

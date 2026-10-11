@@ -5,10 +5,13 @@ The director is a vision-language model the studio talks to over an **OpenAI-com
 - **writes**: turns one sentence into a full shot prompt (picture, action, sound) with one beat per 15 s segment, and music briefs;
 - **reviews**: watches every rendered segment and scores it against its prompt; with *Director review → re-take* a weak
   segment is rendered once more with the director's fix;
-- **picks voices and describes shots** for *Recreate a Short* (it watches the Short's shots).
+- **picks voices and describes shots** for *Recreate a Short* (it watches the Short's shots); in the *Faithful* style it picks out
+  the performer once and checks every anchor frame (is the performer there, is the face visible, expression, makeup) before a swap;
+- **arranges MIDI files**: reads the parts of an attached `.mid` and a description of the sound you want, and picks an instrument
+  or drum kit for every part, a style line for the AI restyle, and whether the restyle is needed.
 
 It must accept **video input** (`"type": "video_url"` content parts with a `data:video/mp4;base64,…` URL). Without a
-director the studio still renders; only *Write it*, reviews, music briefs and *Recreate* need it.
+director the studio still renders; only *Write it*, reviews, music briefs, MIDI arranging and *Recreate* need it.
 
 ## Option A — TensorFold on the same Spark (what the studio was developed with)
 

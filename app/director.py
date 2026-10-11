@@ -127,7 +127,7 @@ def pick_voice(video_path, segments, who, duration):
              "Reply JSON only: {\"start\": seconds, \"end\": seconds, \"speaker\": \"short description of who is speaking\", \"reason\": \"one sentence\"}"}]}]
     if _up(FLASH): base, model, by = FLASH, C.WRITER_MODEL, C.WRITER_LABEL
     else:
-        if not ensure(): raise RuntimeError(f"the director did not answer at {DIRECTOR}")
+        if not ensure(): raise RuntimeError("the director is not running")
         base, model, by = DIRECTOR, C.DIRECTOR_MODEL, C.DIRECTOR_LABEL
     try:
         d = _ask(base, model, msg, max_tokens=300, temperature=0.2); s, e = float(d["start"]), float(d["end"])
@@ -210,4 +210,59 @@ def describe_shot(clip_path, words, notes="", has_cast=True):
         except Exception: pass
         if not named(d): d["picture"] = "The person from the reference image is the main person in this shot. " + d["picture"]
     d["by"] = C.DIRECTOR_LABEL; d["secs"] = round(time.time() - t, 1)
+    return d
+
+
+# Faithful Recreate ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+def who_is_performer(video_path):
+    """watch the Short (picture only, small) -> a visual description that picks out the main performer in any single frame"""
+    if not ensure(): raise RuntimeError("the director is not running")
+    tmp = tempfile.mktemp(suffix=".mp4")
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-t", "60", "-i", video_path, "-an", "-vf", "scale=360:-2,fps=4", "-c:v", "libx264", "-crf", "32", tmp],
+                   capture_output=True, timeout=180)
+    try: v = base64.b64encode(open(tmp, "rb").read()).decode()
+    finally:
+        try: os.remove(tmp)
+        except OSError: pass
+    d = _ask(DIRECTOR, C.DIRECTOR_MODEL, [{"role": "user", "content": [{"type": "video_url", "video_url": {"url": "data:video/mp4;base64," + v}},
+             {"type": "text", "text": "Who is the main performer of this video (the star a remake would recast)? Reply JSON only: {\"who\": \"a short visual "
+              "description that picks them out in any single frame: clothing, hair, distinctive features — never their name\"}"}]}], max_tokens=120, temperature=0.1)
+    return str(d.get("who") or "the main person").strip()
+
+
+def check_frame(image_path, who):
+    """one still -> {present, face_visible, where, expression, makeup} for the performer"""
+    b = base64.b64encode(open(image_path, "rb").read()).decode()
+    d = _ask(DIRECTOR, C.DIRECTOR_MODEL, [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": "data:image/png;base64," + b}},
+             {"type": "text", "text": f"The performer is: {who}. Look at this frame. Reply JSON only: {{\"present\": true|false, \"face_visible\": true|false "
+              "(their face is clearly visible and turned at least partly to the camera, not blurred or tiny), \"where\": \"where they are in the frame\", "
+              "\"expression\": \"their facial expression in a few words\", \"makeup\": \"any makeup, face paint or special-effects makeup on their face, or none\"}"}]}],
+             max_tokens=200, temperature=0.1)
+    return {"present": d.get("present") is True, "face_visible": d.get("face_visible") is True, "where": str(d.get("where") or ""),
+            "expression": str(d.get("expression") or ""), "makeup": str(d.get("makeup") or "none")}
+
+
+# MIDI arranging ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+def midi_arrange(parts, request, bpm, seconds, gm_names, kit_names):
+    """the director reads a MIDI file's parts and the user's request -> {parts: {ch: GM name | kit name | "mute"}, style, restyle, strength, notes}"""
+    if not ensure(): raise RuntimeError("the director is not running")
+    rows = []
+    for p in parts:
+        lo, hi = (p.get("range") or [0, 0])[:2]
+        role = "drums" if p.get("drums") else "bass register" if hi and hi < 60 else "melody / high register" if lo >= 64 else "middle register (chords or melody)"
+        rows.append(f'channel {p["channel"]}: {"DRUM part" if p.get("drums") else "melodic part"}, track name "{p.get("name") or ""}", now plays as '
+                    f'{p.get("instrument")}, {p.get("notes")} notes, MIDI range {lo}-{hi} ({role})')
+    msg = [{"role": "system", "content": "You are a music arranger. You read MIDI parts and choose instruments that realise the requested sound. "
+                                         "Reply with JSON only."},
+           {"role": "user", "content": f"A MIDI file, {float(bpm):g} BPM, {float(seconds):g} s, with these parts:\n" + "\n".join(rows) +
+            f"\n\nThe user wants: {request}\n\nChoose, for EVERY channel above, one instrument from the General MIDI list (exact names below), "
+            f"or \"mute\" to drop a part. Drum parts take one of these kits instead: {', '.join(kit_names)}. Keep the parts' roles sensible "
+            "(a low part stays a bass instrument unless asked otherwise).\n"
+            f"General MIDI names: {'; '.join(gm_names)}.\n\nAlso write a 20-40 word style description of the requested sound for an AI music "
+            "model that will re-render the arrangement (genre, instruments, playing feel, production), and say whether that AI restyle is needed: "
+            "true when the request asks for something a General MIDI soundfont cannot produce well (a genre or production feel, a live band, "
+            "analogue synths, a specific era), false when plain instrument swaps are enough. strength 0.4 = stay very close to the notes, 0.7 = freer.\n"
+            'Return {"parts": {"<channel>": "<GM name | kit name | mute>"}, "style": "...", "restyle": true|false, "strength": 0.4-0.7, '
+            '"notes": "one sentence on the choices"}'}]
+    d = _ask(DIRECTOR, C.DIRECTOR_MODEL, msg, max_tokens=700, temperature=0.3)
     return d

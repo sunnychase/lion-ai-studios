@@ -74,11 +74,12 @@ def compose_prompt(picture, action, sound):
     return "\n\n".join(parts)
 
 
-def video_graph(preset, prompt, sec, seed, prefix, first_image=None, guide_video=None, force_h3=False, last_image=None, engine="comfy", vae8=False):
+def video_graph(preset, prompt, sec, seed, prefix, first_image=None, guide_video=None, force_h3=False, last_image=None, engine="comfy", vae8=False,
+                dims=None):
     """preset: draft|standard|high. first_image: a file in ComfyUI's input dir (first frame). guide_video: the previous segment
     (input dir) whose last GUIDE_FRAMES frames AND audio are anchored at frame 0, so picture and sound carry on (ComfyUI PR #15439).
     FastH3 is text-to-video only, so a draft with an image or a guide runs on H3 + Turbo at 480p instead."""
-    p = VIDEO[preset]; W, H, steps = p["w"], p["h"], p["steps"]
+    p = VIDEO[preset]; W, H = dims or (p["w"], p["h"]); steps = p["steps"]             # dims = (w, h) override (e.g. vertical)
     if W % 32 or H % 32: raise ValueError(f"{W}x{H}: H3 needs both sides divisible by 32 (its latent is patched 2x2 at 1/16 scale)")
     # on TensorFold, FastH3 takes first/last frames and guides too (benched 10-09: same quality, ~1.75x faster than H3+Turbo);
     # the ComfyUI engine keeps the old rule (FastH3 text-only; force_h3 = one engine for a whole film)
@@ -150,9 +151,9 @@ def cast_ready():
     return os.path.exists(os.path.join(MODELS_DIR, "diffusion_models", REF2VA["unet"]))
 
 
-def cast_graph(preset, prompt, sec, seed, prefix, images, audio=None, vae8=False):
+def cast_graph(preset, prompt, sec, seed, prefix, images, audio=None, vae8=False, dims=None):
     """images: up to 3 file names in ComfyUI's input dir (faces/characters); audio: a voice clip there (or None)"""
-    p = VIDEO[preset]; W_, H_ = p["w"], p["h"]
+    p = VIDEO[preset]; W_, H_ = dims or (p["w"], p["h"])
     g = {
         "1": {"class_type": "UNETLoader", "inputs": {"unet_name": REF2VA["unet"], "weight_dtype": "default"}},
         "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": H3_CLIP, "type": "minimax"}},
@@ -192,6 +193,12 @@ TURBO_SIGMAS = "1.0, 0.978453, 0.95418, 0.926626, 0.89508, 0.845148, 0.704534, 0
 
 def edit_ready():
     return all(os.path.exists(os.path.join(MODELS_DIR, f)) for f in IMAGE[EDIT_MODEL])
+
+
+def shape_dims(preset, src_w, src_h, shape="auto"):
+    """the preset's size in the source's shape — a vertical Short renders vertical (both sides stay /32)"""
+    w, h = VIDEO[preset]["w"], VIDEO[preset]["h"]
+    return (h, w) if shape == "auto" and src_w and src_h and src_h > src_w else (w, h)
 
 
 def edit_graph(images, prompt, seed, prefix, negative=""):

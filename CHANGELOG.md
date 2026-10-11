@@ -1,0 +1,47 @@
+# Changelog
+
+Updates to Lion AI Studios, newest first. The project has no version numbers; each entry is dated.
+
+## 2026-10-11 — Faithful Recreate, MIDI arranging
+
+**Recreate a Short: Faithful style (now the default)**
+- Follows the original frame by frame instead of re-describing it. The director picks out the performer once
+  (`director.who_is_performer`), and one clean studio portrait of your cast is made with the image editor.
+- Anchor frames are taken about 1.2 s apart *inside* every shot (never across a cut; the last one 3 frames before the cut, with an
+  exact-seek fallback when a fast seek returns nothing). The director checks each one (`director.check_frame`): only where the
+  performer's face is visible is the cast swapped in, using that frame and the portrait as references. Swapped frames are never
+  chained into the next swap, because the sharpening compounds. Every other anchor passes through unchanged.
+- H3 animates between neighbouring anchors (first + last frame) with a neutral "one continuous shot" prompt. Each clip is retimed
+  to the exact gap between its anchors (`setpts` / `atempo`), and each shot is padded to its exact length (`tpad` / `apad`).
+- The Short is captured at up to 1080p for sharper anchors (`voice.py capture URL DIR [max height]`).
+- **Re-imagine** keeps the previous behaviour: the director rewrites each shot, and your *Changes* apply.
+- **Shape**: output follows the Short's shape, so a vertical Short renders vertical (`workflows.shape_dims`; `video_graph` and
+  `cast_graph` take `dims`). Choose *Landscape* to override.
+- The Recreate soundtrack now defaults to *Original audio, exactly*. Choosing Faithful switches *New sound* to it.
+- Measured on one DGX Spark: about 22 min for a 21 s Short at Draft, with audio sync 0.999 against the original.
+- Known limitation: scene makeup (face paint, special-effects makeup) carries over on some swapped frames only.
+
+**Music: the director arranges MIDI**
+- *Attach a MIDI file* in the Music builder, describe the sound ("jazz trio: piano, upright bass, brushed drums"), and press
+  *Director: arrange it*. The director reads every part (register, notes, track name) and picks a General MIDI instrument or drum
+  kit for each, or mutes it. It also writes a style line for the AI restyle and decides whether the restyle is needed.
+- New route: `POST /api/director/midi` with `{file, request}` returns `{parts, names, style, restyle, strength, notes, by}`.
+  The director's names are matched to General MIDI programs and kits by `gm_pick`; an unknown name keeps the file's own instrument.
+
+**Fixes**
+- MIDI: the Standard drum kit (kit 0) could not be picked by name, because `gm_pick` treated kit 0 as "not found". It now
+  compares with `None`.
+- MIDI: choosing an instrument from a part's menu failed with "bad instrument". The page's digit test sat inside a template literal,
+  where `\d` loses its backslash, so it now uses `[0-9]`. The server also accepts program numbers sent as digit strings.
+
+## 2026-10-10 — Recreate soundtrack choice
+- Soundtrack for Recreate: new sound, the original music under your cast's voices, or the original audio exactly. With the
+  original sound every shot is cut to its original length (`voice.py stems`, with a CPU fallback).
+- The director describes the scene's makeup, face paint, prosthetics, costume and expression as applied to the cast.
+
+## 2026-10-10 — Director JSON
+- Director replies are parsed leniently, with one retry. Recreate keeps the cast named in every shot.
+
+## 2026-10-10 — First public release
+- Video with sound (MiniMax H3 / FastH3, films up to 5 min), ten image models with editing, music (ACE-Step 1.5, MiniMax Music 3,
+  MIDI), voices, the director, Cast, Recreate a Short, the Editor, setup scripts, the model manifest, benchmarks and samples.

@@ -44,9 +44,27 @@ def _chat(base, model, messages, max_tokens=900, temperature=0.6):
 
 
 def _json(txt):
+    """the director's reply -> dict. Strict JSON first; then the slips a small model makes (a ```json fence, missing braces, missing
+    commas between "key": "value" lines); last, the expected fields pulled out one by one. A reply with no fields still raises."""
     m = re.search(r"\{.*\}", txt, re.S)
-    if not m: raise ValueError("the director did not return JSON")
-    return json.loads(m.group(0))
+    if m:
+        try: return json.loads(m.group(0))
+        except ValueError: pass
+    body = re.sub(r"^\s*```(?:json)?\s*|\s*```\s*$", "", txt.strip())
+    if not body.startswith("{"):
+        try: return json.loads("{" + re.sub(r'"\s*\n\s*"', '",\n"', body).rstrip(", \n") + "}")
+        except ValueError: pass
+    d = {k: json.loads('"' + v + '"') for k, v in re.findall(r'"(\w+)"\s*:\s*"((?:[^"\\]|\\.)*)"', txt)}
+    d.update({k: json.loads(v) for k, v in re.findall(r'"(\w+)"\s*:\s*(-?\d+(?:\.\d+)?|true|false)\b', txt)})
+    if d: return d
+    raise ValueError("the director did not return JSON")
+
+
+def _ask(base, model, messages, **kw):
+    """_chat + _json, with one retry when the reply cannot be read as JSON"""
+    try: return _json(_chat(base, model, messages, **kw))
+    except ValueError:
+        return _json(_chat(base, model, messages + [{"role": "user", "content": "Reply again with only one valid JSON object, in braces, nothing else."}], **kw))
 
 
 WRITE_SYS = ("You are a film director writing prompts for MiniMax-H3, a text-to-video model that makes picture AND sound together. "
@@ -67,7 +85,7 @@ def write(idea, seconds, n_segments, mode="video", n_images=0):
     else:
         if not ensure(): raise RuntimeError(f"the director did not answer at {DIRECTOR} — is the server running? (see DIRECTOR_URL in studio.env)")
         base, model, who = DIRECTOR, C.DIRECTOR_MODEL, C.DIRECTOR_LABEL
-    t = time.time(); d = _json(_chat(base, model, msg)); d["by"] = who; d["secs"] = round(time.time() - t, 1)
+    t = time.time(); d = _ask(base, model, msg); d["by"] = who; d["secs"] = round(time.time() - t, 1)
     d["beats"] = [str(b) for b in (d.get("beats") or [])]
     return d
 
@@ -85,7 +103,7 @@ def review(video_path, prompt):
             {"type": "text", "text": "You review AI-generated clips for a film. The clip was made from this prompt:\n\n" + prompt[:3000] +
              "\n\nJudge only what you can see. Reply JSON only: {\"score\": 1-10, \"matches_prompt\": true|false, \"issues\": [\"...\"], "
              "\"fix\": \"one sentence a re-take prompt should add\"}"}]}]
-    t = time.time(); d = _json(_chat(DIRECTOR, C.DIRECTOR_MODEL, msg, max_tokens=400, temperature=0.2)); d["secs"] = round(time.time() - t, 1)
+    t = time.time(); d = _ask(DIRECTOR, C.DIRECTOR_MODEL, msg, max_tokens=400, temperature=0.2); d["secs"] = round(time.time() - t, 1)
     try: d["score"] = int(d.get("score") or 0)
     except (TypeError, ValueError): d["score"] = 0
     return d
@@ -112,7 +130,7 @@ def pick_voice(video_path, segments, who, duration):
         if not ensure(): raise RuntimeError(f"the director did not answer at {DIRECTOR}")
         base, model, by = DIRECTOR, C.DIRECTOR_MODEL, C.DIRECTOR_LABEL
     try:
-        d = _json(_chat(base, model, msg, max_tokens=300, temperature=0.2)); s, e = float(d["start"]), float(d["end"])
+        d = _ask(base, model, msg, max_tokens=300, temperature=0.2); s, e = float(d["start"]), float(d["end"])
         if e - s < 3: e = s + 6
         if e - s > 15: e = s + 15
         s, e = max(0.0, s), min(duration or e, e)
@@ -148,7 +166,7 @@ def music_brief(idea, seconds, engine="fast"):
     else:
         if not ensure(): raise RuntimeError("the director did not start")
         base, model, who = DIRECTOR, C.DIRECTOR_MODEL, C.DIRECTOR_LABEL
-    d = _json(_chat(base, model, msg, max_tokens=700)); d["by"] = who
+    d = _ask(base, model, msg, max_tokens=700); d["by"] = who
     try: d["bpm"] = max(40, min(200, int(d.get("bpm") or 100)))
     except (TypeError, ValueError): d["bpm"] = 100
     d["style"] = str(d.get("style") or "").strip(); d["key"] = str(d.get("key") or "C major").strip()
@@ -176,8 +194,17 @@ def describe_shot(clip_path, words, notes="", has_cast=True):
              f"{who} Keep the setting, framing, lens, light, camera movement, action, timing and mood. {said} {change}\n\n"
              "Reply JSON only: {\"picture\": \"40-90 words: who/what is in frame, where, light, lens\", \"action\": \"what happens and how the camera moves\", "
              "\"sound\": \"ambience and music only, not the spoken words\"}"}]}]
-    t = time.time(); d = _json(_chat(DIRECTOR, C.DIRECTOR_MODEL, msg, max_tokens=500, temperature=0.3))
+    t = time.time(); d = _ask(DIRECTOR, C.DIRECTOR_MODEL, msg, max_tokens=500, temperature=0.3)
     for k in ("picture", "action", "sound"): d[k] = str(d.get(k) or "").strip()
     if not d["picture"]: raise ValueError("the director returned no picture description")
+    named = lambda x: "reference image" in (str(x.get("picture", "")) + " " + str(x.get("action", ""))).lower()
+    if has_cast and not named(d):                                  # the cast must be named, or the shot has no <Subject 1> to tie it to the face
+        try:
+            d2 = _ask(DIRECTOR, C.DIRECTOR_MODEL, msg + [{"role": "assistant", "content": json.dumps({k: d[k] for k in ("picture", "action", "sound")})},
+                      {"role": "user", "content": 'Rewrite it: call the main person only "the person from the reference image", and do not describe their '
+                                                  "face, hair, skin, age or ethnicity. Same JSON keys."}], max_tokens=500, temperature=0.3)
+            if named(d2): d.update({k: str(d2.get(k) or d[k]).strip() for k in ("picture", "action", "sound")})
+        except Exception: pass
+        if not named(d): d["picture"] = "The person from the reference image is the main person in this shot. " + d["picture"]
     d["by"] = C.DIRECTOR_LABEL; d["secs"] = round(time.time() - t, 1)
     return d

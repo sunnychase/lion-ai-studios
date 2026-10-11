@@ -1,0 +1,9 @@
+# voice cloning (Qwen3-TTS), music removal (Demucs), transcription (Whisper), Shorts download (yt-dlp)
+# torch/torchaudio come from the CUDA 13 index: see scripts/setup_envs.sh
+qwen-tts==0.1.1
+demucs==4.0.1
+transformers==4.57.3
+accelerate==1.12.0
+soundfile==0.14.0
+yt-dlp==2026.8.19
+yt-dlp-ejs==0.8.0

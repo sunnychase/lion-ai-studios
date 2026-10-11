@@ -1,0 +1,10 @@
+studio.env
+__pycache__/
+*.pyc
+*.part
+*.tf-int8
+/library/
+/state/
+/uploads/
+/voices/
+.DS_Store

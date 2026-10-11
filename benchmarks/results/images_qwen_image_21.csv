@@ -1,0 +1,7 @@
+date,order,prompt,model,weights,steps,sampling,width,height,seed,wall_s,output
+2026-10-10,1,poster,Qwen-Image 2.1 Turbo,bf16,8,"checkpoint's own 8 sigmas, euler, cfg 1",1344,768,77,16.1,poster_turbo.png
+2026-10-10,2,poster,Qwen-Image 2.1 Turbo,bf16,8,"checkpoint's own 8 sigmas, euler, cfg 1",2752,1536,77,44.0,poster_turbo2k.png
+2026-10-10,3,poster,Qwen-Image 2.1,int8 (convrot),25,"euler / simple, cfg 1",1344,768,77,24.0,poster_base.png
+2026-10-10,4,portrait,Qwen-Image 2.1 Turbo,bf16,8,"checkpoint's own 8 sigmas, euler, cfg 1",1344,768,77,16.0,portrait_turbo.png
+2026-10-10,5,portrait,Qwen-Image 2.1 Turbo,bf16,8,"checkpoint's own 8 sigmas, euler, cfg 1",2752,1536,77,44.0,portrait_turbo2k.png
+2026-10-10,6,portrait,Qwen-Image 2.1,int8 (convrot),25,"euler / simple, cfg 1",1344,768,77,24.0,portrait_base.png

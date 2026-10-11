@@ -1,0 +1,51 @@
+"""config.py — every machine-specific setting of Lion AI Studios, read from the environment.
+
+Copy studio.env.example to studio.env and edit it; the systemd unit (or `set -a; . ./studio.env`) loads it.
+Nothing here needs third-party packages, so the helper workers (voice.py, midi_tool.py) can import it from their own venvs."""
+import os
+
+E = os.environ.get
+
+
+def _p(v):
+    return os.path.abspath(os.path.expanduser(os.path.expandvars(v)))
+
+
+# ── the studio itself ──────────────────────────────────────────────────────────────────────────────────────
+STUDIO_HOME = _p(E("STUDIO_HOME", "~/lion-studio"))       # library/, state/, uploads/, voices/, models/, envs/ live here
+HOST = E("STUDIO_HOST", "127.0.0.1")                       # keep it on localhost; put an authenticating proxy in front for remote use
+PORT = int(E("STUDIO_PORT", "8482"))
+MODELS = os.path.join(STUDIO_HOME, "models")               # the studio's own models: TTS, Whisper, soundfonts
+
+# ── ComfyUI (the renderer) ─────────────────────────────────────────────────────────────────────────────────
+COMFY_DIR = _p(E("COMFY_DIR", "~/ComfyUI"))                # the ComfyUI checkout (input/ and output/ are used directly)
+COMFY_URL = E("COMFY_URL", "http://127.0.0.1:8188").rstrip("/")
+COMFY_MODELS = _p(E("COMFY_MODELS", os.path.join(COMFY_DIR, "models")))
+COMFY_SERVICE = E("COMFY_SERVICE", "comfyui.service")      # systemd --user unit the studio may start; empty = never start it
+
+# ── the director (an OpenAI-compatible chat server with video input) ───────────────────────────────────────
+DIRECTOR_URL = E("DIRECTOR_URL", "http://127.0.0.1:8486").rstrip("/")
+DIRECTOR_MODEL = E("DIRECTOR_MODEL", "studio-director")   # the served model name
+DIRECTOR_LABEL = E("DIRECTOR_LABEL", "the director")      # how the page names it
+DIRECTOR_SERVICE = E("DIRECTOR_SERVICE", "")              # optional systemd --user unit started on first use and stopped to make room
+# optional second, text-only writer that is preferred for writing whenever it answers (e.g. a bigger LLM you already run)
+WRITER_URL = E("WRITER_URL", "").rstrip("/")
+WRITER_MODEL = E("WRITER_MODEL", "")
+WRITER_LABEL = E("WRITER_LABEL", "the writer")
+
+# ── optional: another GPU service the studio may pause (ask first, then stop; offer to start it again after) ──
+TENANT_NAME = E("GPU_TENANT_NAME", "")                     # e.g. "the vLLM server"; empty = feature off
+TENANT_CHECK = E("GPU_TENANT_CHECK", "")                   # shell command, exit 0 = it is running
+TENANT_STOP = E("GPU_TENANT_STOP", "")                     # shell command that stops it
+TENANT_START = E("GPU_TENANT_START", "")                   # shell command that starts it again
+
+# ── guards ─────────────────────────────────────────────────────────────────────────────────────────────────
+NEED_GIB = float(E("STUDIO_NEED_GIB", "55"))               # free unified memory a render needs before ComfyUI is up
+HOT_C = float(E("STUDIO_HOT_C", "95"))                     # pause between segments at this board temperature...
+COOL_C = float(E("STUDIO_COOL_C", "85"))                   # ...and resume below this one
+
+# ── helper environments ────────────────────────────────────────────────────────────────────────────────────
+TTS_PY = _p(E("STUDIO_TTS_PY", os.path.join(STUDIO_HOME, "envs/tts/bin/python")))     # qwen-tts, demucs, Whisper, yt-dlp
+MIDI_PY = _p(E("STUDIO_MIDI_PY", os.path.join(STUDIO_HOME, "envs/midi/bin/python")))  # mido + tinysoundfont
+SF2 = _p(E("STUDIO_SF2", os.path.join(MODELS, "soundfonts/MuseScore_General.sf2")))
+TF_LIB = _p(E("TENSORFOLD_LIB", os.path.join(COMFY_DIR, "custom_nodes/tensorfold_h3/libtf_h3.so")))  # optional engine

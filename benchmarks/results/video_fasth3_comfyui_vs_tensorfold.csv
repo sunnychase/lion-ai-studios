@@ -1,0 +1,8 @@
+date,run,preset,engine,decoder,size,frames,seconds,seed,wall_s,gpu_temp_at_end_c,status,output,note
+2026-10-09,A_comfy_480,draft,FastH3,fp16,864x480,124,5,1009,132.3,58,success,A_comfy_480_00001_.mp4,first run of the sequence
+2026-10-09,D_comfy_480_vae8,draft,FastH3,8-bit,864x480,124,5,1009,16.0,57,success,D_comfy_480_vae8_00001_.mp4,"NOT a full render: same prompt+seed as A, only the decoder changed, so ComfyUI served the sampler output from its cache; 16.0 s = decode + mux only"
+2026-10-09,F_comfy_768,fasthd,FastH3,fp16,1344x768,124,5,1009,272.3,63,success,F_comfy_768_00001_.mp4,
+2026-10-09,B1_tf_480_first,draft,FastH3 · TensorFold,fp16,864x480,124,5,1009,153.2,58,success,B1_tf_480_first_00001_.mp4,first TensorFold run ever: includes the one-time bf16->int8 conversion (.tf-int8 file written) and engine load
+2026-10-09,B2_tf_480,draft,FastH3 · TensorFold,fp16,864x480,124,5,1010,76.1,63,success,B2_tf_480_00001_.mp4,warm engine; seed 1010 (seed+1) so ComfyUI could not serve it from cache
+2026-10-09,C_tf_480_vae8,draft,FastH3 · TensorFold,8-bit,864x480,124,5,1009,70.1,62,success,C_tf_480_vae8_00001_.mp4,warm engine; same seed as A
+2026-10-09,E_tf_768,fasthd,FastH3 · TensorFold,fp16,1344x768,124,5,1009,192.2,63,success,E_tf_768_00001_.mp4,warm engine; same seed as F

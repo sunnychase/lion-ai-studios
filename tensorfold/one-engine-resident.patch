@@ -1,0 +1,13 @@
+--- a/__init__.py
++++ b/__init__.py
+@@ -57,6 +57,10 @@
+ def engine(path):
+     handle = _engines.get(path)
+     if handle is None:
++        if _engines:                    # one model resident at a time (FastH3 / H3 / H3 Turbo are ~21 GB each)
++            logging.info(f"TensorFold H3: releasing {len(_engines)} other model(s) before loading {os.path.basename(path)}")
++            torch.cuda.synchronize()
++            release()
+         torch.cuda.synchronize()
+         handle = library().tf_h3_open(path.encode())
+         if not handle:

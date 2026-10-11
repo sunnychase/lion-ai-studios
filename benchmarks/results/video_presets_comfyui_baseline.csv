@@ -1,0 +1,4 @@
+date,finished_at,preset,engine,model,width,height,seconds,frames,steps,seed,decoder,wall_s,step_s_reading_1,step_s_reading_2,gpu_util_mean_pct,power_max_w,gpu_temp_max_c,mem_available_min_gib,status
+2026-10-09,2026-10-09T15:42:20,standard,ComfyUI,MiniMax H3 fl2va int8 + Turbo 8-step LoRA,1280,720,5.0,124,8,20261009,fp16,414.5,43.82,43.77,90.2,88.91,80,69.7,success
+2026-10-09,2026-10-09T15:45:18,draft,ComfyUI,FastH3 8-step V2 int8 + VSA sparse attention (keep 10%),864,480,5.0,124,8,20261009,fp16,129.1,11.43,12.2,90.2,89.79,79,68.8,success
+2026-10-09,2026-10-09T16:02:56,high,ComfyUI,"MiniMax H3 fl2va int8 (base, no LoRA)",1344,768,5.0,124,20,20261009,fp16,1051.9,52.39,50.18,95.3,89.32,81,67.0,success

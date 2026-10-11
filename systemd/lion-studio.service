@@ -1,0 +1,15 @@
+# Lion AI Studios web app. Install: scripts/install_services.sh (copies to ~/.config/systemd/user/, fills in the repo path).
+[Unit]
+Description=Lion AI Studios (web app, localhost only)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO@
+# loaded through bash so $HOME and quotes in studio.env work
+ExecStart=/bin/bash -c 'set -a; . @REPO@/studio.env; set +a; exec /usr/bin/python3 @REPO@/app/studio_server.py'
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

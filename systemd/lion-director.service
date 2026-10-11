@@ -1,0 +1,15 @@
+# Optional: lets the studio start the director on first use (DIRECTOR_SERVICE=lion-director.service).
+# Assumes the TensorFold recipe in ~/director with the .env from docs/DIRECTOR.md. Install: copy to ~/.config/systemd/user/.
+[Unit]
+Description=Lion AI Studios director (Qwen3.8-27B on TensorFold, 127.0.0.1:8486)
+After=network.target docker.service
+
+[Service]
+Type=simple
+Environment=FOREGROUND=1
+ExecStart=%h/director/start.sh
+ExecStop=/usr/bin/docker stop -t 30 studio-director
+Restart=no
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,1043 @@
+#!/usr/bin/env python3
+"""Lion AI Studios — a professional media suite for the NVIDIA DGX Spark: video with sound (MiniMax H3 / FastH3), images (the ComfyUI
+image models), music (ACE-Step 1.5, MiniMax Music 3, MIDI), cloned voices, a director that writes and reviews every shot, and long films
+chained from 15 s segments whose seams carry the previous segment's frames AND sound. Renders run in ComfyUI.
+Listens on config.HOST:PORT (127.0.0.1 by default) — put an authenticating reverse proxy in front before exposing it anywhere.
+GPU rule: if another GPU service is configured (GPU_TENANT_*), a render that needs the GPU names it, waits for the click, stops it,
+and offers to start it again afterwards. Thermal guard: before every segment, waits while the hottest board zone is >= HOT_C."""
+import json, math, os, re, shutil, socket, base64, struct, subprocess, sys, threading, time, urllib.request, uuid
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse, parse_qs, unquote
+
+HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
+import config as C                                             # noqa: E402
+import workflows as W, stitch, director as DIR                 # noqa: E402
+import music as MU                                              # noqa: E402  
+import midi_tool as MT                                          # noqa: E402  (GM names only; mido/tinysoundfont run in midi-venv)
+
+ROOT = C.STUDIO_HOME; LIB = f"{ROOT}/library"; STATE = f"{ROOT}/state"; UP = f"{ROOT}/uploads"
+VOICES = f"{ROOT}/voices"; TTS_PY = C.TTS_PY; VOICE_PY = f"{HERE}/voice.py"
+for d in (LIB, STATE, UP, VOICES): os.makedirs(d, exist_ok=True)
+COMFY = C.COMFY_URL; COMFY_IN = f"{C.COMFY_DIR}/input"; COMFY_OUT = f"{C.COMFY_DIR}/output"
+JOBS_F = f"{STATE}/jobs.json"; PORT = C.PORT
+NEED_GIB = C.NEED_GIB; HOT_C = C.HOT_C; COOL_C = C.COOL_C
+LOCK = threading.Lock(); JOBS = {}; GPU = {"freed_tf": False, "busy": "", "note": ""}; PROGRESS = {}
+
+
+def now(): return time.strftime("%Y-%m-%dT%H:%M:%S")
+def save():
+    with LOCK:
+        tmp = JOBS_F + ".tmp"; json.dump(JOBS, open(tmp, "w"), indent=1); os.replace(tmp, JOBS_F)
+def sh(cmd, t=20):
+    try: return subprocess.run(cmd, capture_output=True, text=True, timeout=t).stdout.strip()
+    except Exception: return ""
+
+
+# ── the machine: GPU owner, memory, heat ─────────────────────────────────────────────────────────────────────────────────────────────
+def meminfo_gib():
+    try: return int(next(l for l in open("/proc/meminfo") if l.startswith("MemAvailable")).split()[1]) / 1048576
+    except Exception: return 0.0
+def heat():
+    zs = []
+    for z in os.listdir("/sys/class/thermal"):
+        try: zs.append(int(open(f"/sys/class/thermal/{z}/temp").read()) / 1000)
+        except Exception: pass
+    q = sh(["nvidia-smi", "--query-gpu=temperature.gpu,clocks_event_reasons.hw_thermal_slowdown,clocks_event_reasons.sw_thermal_slowdown", "--format=csv,noheader"], 8)
+    parts = [x.strip() for x in q.split(",")] if q else []
+    return {"board": max(zs) if zs else None, "gpu": float(parts[0]) if parts and parts[0].replace(".", "").isdigit() else None,
+            "throttle": any(p == "Active" for p in parts[1:])}
+_OWN = {"t": 0, "v": None}
+def gpu_owner(fresh=False):
+    """what holds the GPU besides ComfyUI: {'tf': bool, 'other': [names], 'mem': GiB free} (cached 5 s for the page's polls)"""
+    if not fresh and _OWN["v"] and time.time() - _OWN["t"] < 5: return _OWN["v"]
+    _OWN.update(t=time.time(), v=_gpu_owner()); return _OWN["v"]
+def _gpu_owner():
+    """the optional other GPU service (GPU_TENANT_CHECK exits 0 while it runs)"""
+    up = bool(C.TENANT_CHECK) and subprocess.run(C.TENANT_CHECK, shell=True, capture_output=True, timeout=20).returncode == 0
+    return {"tf": up, "other": [], "mem": round(meminfo_gib(), 1), "tenant": C.TENANT_NAME}
+def comfy_up():
+    try: urllib.request.urlopen(f"{COMFY}/system_stats", timeout=3).read(); return True
+    except Exception: return False
+def ensure_comfy():
+    if comfy_up(): return True
+    if not C.COMFY_SERVICE: return False
+    sh(["systemctl", "--user", "start", C.COMFY_SERVICE], 30)
+    for _ in range(90):
+        if comfy_up(): WS.kick(); return True
+        time.sleep(2)
+    return False
+
+
+# ── ComfyUI websocket (progress) — a minimal RFC 6455 client; text frames only ─────────────────────────────────────────────────────
+CLIENT_ID = "lion-studio-" + uuid.uuid4().hex[:8]
+
+
+class ComfyWS(threading.Thread):
+    def __init__(self): super().__init__(daemon=True); self.sock = None
+    def kick(self):
+        try: self.sock and self.sock.close()
+        except Exception: pass
+    def _connect(self):
+        u = urlparse(COMFY); hp = (u.hostname or "127.0.0.1", u.port or 80)
+        s = socket.create_connection(hp, timeout=10); key = base64.b64encode(os.urandom(16)).decode()
+        s.sendall((f"GET /ws?clientId={CLIENT_ID} HTTP/1.1\r\nHost: {hp[0]}:{hp[1]}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                   f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n").encode())
+        hdr = b""
+        while b"\r\n\r\n" not in hdr: hdr += s.recv(1)
+        if b" 101 " not in hdr.split(b"\r\n")[0]: raise OSError("no upgrade")
+        s.settimeout(None); return s
+    def _recv(self, n):
+        b = b""
+        while len(b) < n:
+            c = self.sock.recv(n - len(b))
+            if not c: raise OSError("closed")
+            b += c
+        return b
+    def run(self):
+        while True:
+            try:
+                self.sock = self._connect()
+                while True:
+                    h = self._recv(2); op = h[0] & 0x0F; ln = h[1] & 0x7F
+                    if ln == 126: ln = struct.unpack(">H", self._recv(2))[0]
+                    elif ln == 127: ln = struct.unpack(">Q", self._recv(8))[0]
+                    data = self._recv(ln)
+                    if op == 8: raise OSError("close")
+                    if op != 1: continue
+                    try: m = json.loads(data)
+                    except ValueError: continue
+                    d = m.get("data") or {}; pid = d.get("prompt_id")
+                    if m.get("type") == "progress" and pid: PROGRESS[pid] = {"value": d.get("value"), "max": d.get("max"), "node": d.get("node"), "t": time.time()}
+                    elif m.get("type") == "executing" and pid: PROGRESS.setdefault(pid, {})["node"] = d.get("node")
+            except Exception:
+                time.sleep(3)
+WS = ComfyWS()
+
+
+def comfy_post(graph):
+    req = urllib.request.Request(f"{COMFY}/prompt", data=json.dumps({"prompt": graph, "client_id": "studio"}).encode(), headers={"Content-Type": "application/json"})
+    try: return json.load(urllib.request.urlopen(req, timeout=30))["prompt_id"]
+    except urllib.error.HTTPError as e:
+        raise RuntimeError("ComfyUI refused the graph: " + e.read().decode("utf-8", "replace")[:600])
+def comfy_wait(pid, job):
+    while True:
+        if job.get("cancel"):
+            try: urllib.request.urlopen(urllib.request.Request(f"{COMFY}/interrupt", data=b"{}", headers={"Content-Type": "application/json"}), timeout=10)
+            except Exception: pass
+            raise RuntimeError("cancelled")
+        try: h = json.load(urllib.request.urlopen(f"{COMFY}/history/{pid}", timeout=30))
+        except Exception: h = {}
+        if pid in h:
+            st = h[pid].get("status") or {}
+            if st.get("status_str") == "error":
+                msg = next((m[1].get("exception_message") for m in st.get("messages", []) if m[0] == "execution_error"), "render failed")
+                raise RuntimeError(str(msg)[:400])
+            files = []
+            for out in (h[pid].get("outputs") or {}).values():
+                for key in ("images", "videos", "gifs", "audio"):
+                    for f in out.get(key) or []:    # only what the graph SAVED (a LoadVideo/LoadImage also reports its input file here)
+                        if isinstance(f, dict) and f.get("filename") and f.get("type", "output") == "output":
+                            files.append(os.path.join(COMFY_OUT, f.get("subfolder") or "", f["filename"]))
+            return files
+        p = PROGRESS.get(pid) or {}
+        if p.get("max"): job["progress"].update(step=p.get("value"), steps=p.get("max"))
+        time.sleep(2)
+
+
+# ── jobs ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+def new_job(kind, params):
+    jid = time.strftime("%m%d-%H%M%S-") + uuid.uuid4().hex[:4]
+    est = 0
+    segs = plan_segments(params) if kind == "chain" else params["gaps"] if kind == "keyframes" else [params.get("seconds", 5)]
+    if kind in ("video", "chain", "keyframes"):
+        est = sum(W.estimate_s(params["preset"], s, params.get("engine", "comfy")) for s in segs)   # engine-aware
+        if is_cast(params): est = sum(W.cast_estimate_s(params["preset"], s) for s in segs)
+        if params.get("music") in ("fast", "best"): est += MU.estimate_s(params["music"], sum(segs))
+    elif kind == "music": est = MU.estimate_s(params["engine"], params["seconds"])
+    elif kind == "retake": est = W.estimate_s(params["preset"], params["seconds"], params.get("engine", "comfy")) + 20
+    elif kind == "export": est = 30
+    elif kind == "recreate": est = W.cast_estimate_s(params["preset"], params["max_seconds"]) + 60 + 25 * math.ceil(params["max_seconds"] / 5)
+    j = {"id": jid, "kind": kind, "status": "queued", "created": now(), "params": params, "progress": {"seg": 0, "segs": len(segs) if kind != "image" else 1,
+         "step": 0, "steps": 0, "phase": "queued"}, "outputs": [], "error": "", "est_s": est}
+    with LOCK: JOBS[jid] = j
+    save(); return j
+
+
+def plan_segments(p):
+    """a chain of 15 s segments; each continuation repeats GUIDE_FRAMES of its predecessor, so it adds 15 s minus that overlap"""
+    total = float(p["seconds"]); first = min(15.0, total); segs = [first]; have = first; step = 15.0 - W.GUIDE_FRAMES / W.FPS
+    while have + 0.5 < total:
+        nxt = max(5.0, min(15.0, total - have + W.GUIDE_FRAMES / W.FPS)); segs.append(round(nxt, 2)); have += nxt - W.GUIDE_FRAMES / W.FPS
+    return segs
+
+
+def wait_gpu(job):
+    """returns when the GPU may be used; otherwise holds the job in 'waiting_gpu' with the reason (the page shows the button)"""
+    while True:
+        if job.get("cancel"): raise RuntimeError("cancelled")
+        o = gpu_owner(fresh=True)
+        if o["tf"]: GPU["note"] = f"needs the GPU — {C.TENANT_NAME or 'another GPU service'} is running"; GPU["ask"] = "tf"
+        elif o["other"]: GPU["note"] = f"needs the GPU — {', '.join(o['other'])} is running"; GPU["ask"] = ""
+        elif o["mem"] < NEED_GIB and not comfy_up(): GPU["note"] = f"needs ~{NEED_GIB} GiB free memory; {o['mem']} GiB free now"; GPU["ask"] = ""
+        else:
+            GPU["note"] = ""; GPU["ask"] = ""; return
+        job["status"] = "waiting_gpu"; job["progress"]["phase"] = GPU["note"]; save(); time.sleep(4)
+
+
+def wait_cool(job):
+    while True:
+        h = heat()
+        if not ((h["board"] or 0) >= HOT_C or h["throttle"]): return
+        job["progress"]["phase"] = f"cooling: board {h['board']:.0f} °C, GPU {h['gpu']} °C — resumes below {COOL_C:.0f} °C"; save()
+        while True:
+            if job.get("cancel"): raise RuntimeError("cancelled")
+            time.sleep(15); h = heat()
+            if (h["board"] or 0) < COOL_C and not h["throttle"]: break
+
+
+def to_input(src, name):
+    dst = os.path.join(COMFY_IN, name); shutil.copy2(src, dst); return name
+
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+def is_cast(p): return bool(p.get("cast_images") or p.get("cast_voice"))
+
+
+def subjects(p, voice):
+    """H3's own way of naming references — <Picture N> are the images, <Audio 1> the voice"""
+    ims = p.get("cast_images") or []
+    if not ims and not voice: return ""
+    pics = " and ".join(f"<Picture {i + 1}>" for i in range(len(ims)))
+    return ("subject_definitions:\n" + (f"<Subject 1> is the person in {pics}; keep their face and identity exactly." if ims else "<Subject 1> is the speaker.")
+            + (" <Subject 1> speaks with the voice in <Audio 1>, exactly as it sounds." if voice else "") + "\n\n")
+
+
+def official(text):
+    for a in ("The person from the reference image", "the person from the reference image"): text = text.replace(a, "<Subject 1>")
+    return text
+
+
+def cast_prompt(p, prompt):
+    lines = (p.get("cast_lines") or "").strip()
+    return subjects(p, p.get("cast_voice")) + official(prompt) + (f'\n\n<Subject 1> says, "{lines}"' if lines else "")
+
+
+def cast_refs(p, tag):
+    """the cast's images and voice copied into ComfyUI's input dir -> (image names, audio name or None)"""
+    ims = [to_input(f"{ROOT}/{im}", f"studio_{tag}_face{i}{os.path.splitext(im)[1]}") for i, im in enumerate(p.get("cast_images") or [])]
+    au = to_input(f"{VOICES}/{p['cast_voice']}/ref.wav", f"studio_{tag}_voice.wav") if p.get("cast_voice") else None
+    return ims, au
+
+
+def run_cast(job):
+    """cast clips: each segment from text + the faces + the voice (no first frame, no guides — reference-to-video has neither); segments are cut together"""
+    p = job["params"]; d = f"{LIB}/{job['id']}"; os.makedirs(d, exist_ok=True)
+    segs = plan_segments(p) if job["kind"] == "chain" else [float(p["seconds"])]
+    beats = [b.strip() for b in (p.get("beats") or "").splitlines() if b.strip()]
+    ims, au = cast_refs(p, job["id"]); done = []
+    for k, sec in enumerate(segs):
+        wait_cool(job)
+        job["progress"].update(seg=k + 1, segs=len(segs), step=0, steps=0, phase=f"cast segment {k + 1} of {len(segs)} · {sec:g} s"); save()
+        prompt = cast_prompt(p, p["prompt"] if not beats else (p["prompt"] + "\n\nThis part: " + beats[min(k, len(beats) - 1)]))
+        g, info = W.cast_graph(p["preset"], prompt, sec, int(p["seed"]) + k, f"studio/{job['id']}_s{k + 1}", ims, au, vae8=bool(p.get("vae8")))
+        pid = comfy_post(g); job["progress"]["engine"] = info["engine"]; save()
+        files = [f for f in comfy_wait(pid, job) if f.endswith(".mp4") and os.path.basename(f).startswith(f"{job['id']}_s{k + 1}_")]
+        if not files: raise RuntimeError(f"segment {k + 1} produced no video")
+        seg = f"{d}/seg{k + 1:02d}.mp4"; shutil.move(files[0], seg)
+        def rerender(pr, bump, k=k, sec=sec):
+            g2, _ = W.cast_graph(p["preset"], pr, sec, int(p["seed"]) + k + bump, f"studio/{job['id']}_s{k + 1}r", ims, au, vae8=bool(p.get("vae8")))
+            fs = [f for f in comfy_wait(comfy_post(g2), job) if f.endswith(".mp4") and os.path.basename(f).startswith(f"{job['id']}_s{k + 1}r_")]
+            if not fs: raise RuntimeError(f"segment {k + 1} re-take produced no video")
+            out = f"{d}/seg{k + 1:02d}.retake.mp4"; shutil.move(fs[0], out); return out
+        seg = directed(job, k, seg, prompt, rerender); done.append(seg)
+        job["outputs"] = [{"file": os.path.basename(x), "kind": "segment"} for x in done]; save()
+    if len(done) > 1:
+        job["progress"]["phase"] = "cutting the segments together"; save()
+        rc, log = stitch.join_keyframes(done, f"{d}/film.mp4")
+        if rc: raise RuntimeError("join failed: " + log)
+        main = f"{d}/film.mp4"
+    else:
+        main = done[0]
+    main = add_score(job, main)
+    vo = add_voiceover(job, main)
+    if vo != main: job["outputs"].insert(0, {"file": os.path.basename(main), "kind": "without voice-over"}); main = vo
+    stitch.poster(main, f"{d}/poster.jpg", at=min(1.5, max(0.2, stitch.probe(main)["dur"] / 3)))
+    job["outputs"].insert(0, {"file": os.path.basename(main), "kind": "film" if len(done) > 1 else "video", "poster": "poster.jpg"})
+    for f in os.listdir(COMFY_IN):
+        if f.startswith(f"studio_{job['id']}_"): os.remove(os.path.join(COMFY_IN, f))
+
+
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+def find_shots(src, limit, min_len=2.5, max_len=8.0, max_shots=12):      # 10-10: scene > 0.2 and an 8 s cap follow the original's rhythm
+    """picture cuts (ffmpeg scene score > 0.3) within the first `limit` seconds -> [(start, end)]; short shots merged, long ones split"""
+    dur = min(stitch.probe(src)["dur"], limit)
+    r = subprocess.run(["ffmpeg", "-i", src, "-t", f"{dur:.2f}", "-an", "-filter:v", "select='gt(scene,0.2)',showinfo", "-f", "null", "-"], capture_output=True, text=True)
+    cuts = sorted({round(float(m), 2) for m in re.findall(r"pts_time:([0-9.]+)", r.stderr) if 0.5 < float(m) < dur - 0.5})
+    b = [0.0] + cuts + [round(dur, 2)]; shots = []
+    for a, e in zip(b, b[1:]):
+        if shots and (e - a < min_len or shots[-1][1] - shots[-1][0] < min_len): shots[-1] = (shots[-1][0], e)
+        else: shots.append((a, e))
+    out = []
+    for a, e in shots:
+        n = max(1, math.ceil((e - a) / max_len)); step = (e - a) / n
+        out += [(round(a + i * step, 2), round(a + (i + 1) * step, 2)) for i in range(n)]
+    return out[:max_shots]
+
+
+def run_recreate(job):
+    p = job["params"]; d = f"{LIB}/{job['id']}"; src_dir = f"{d}/source"; os.makedirs(src_dir, exist_ok=True)
+    job["progress"].update(phase="downloading the Short, separating its speech, transcribing it"); save()
+    vworker("capture", p["url"], src_dir, t=2400)
+    meta = json.load(open(f"{src_dir}/transcript.json")); src = f"{src_dir}/source.mp4"
+    shots = find_shots(src, float(p["max_seconds"]))
+    if not shots: raise RuntimeError("no shots found in that video")
+    words = meta.get("words") or []
+    plan = []
+    for i, (a, e) in enumerate(shots):
+        clip = f"{src_dir}/shot{i + 1:02d}.mp4"
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{a:.2f}", "-to", f"{e:.2f}", "-i", src, "-c:v", "libx264", "-crf", "20", "-c:a", "aac", clip], capture_output=True)
+        said = "".join(w["w"] for w in words if a - 0.05 <= w["t0"] < e).strip() if p.get("keep_words", True) else ""
+        job["progress"].update(seg=i + 1, segs=len(shots), phase=f"the director is watching shot {i + 1} of {len(shots)} ({e - a:.1f} s)"); save()
+        dsc = DIR.describe_shot(clip, said, p.get("notes", ""), bool(p.get("cast_images")))
+        plan.append({"start": a, "end": e, "dur": round(max(3.0, e - a), 2), "words": said, "prompt": W.compose_prompt(dsc["picture"], dsc["action"], dsc["sound"])})
+    p.update(shots=plan, title=meta.get("title", ""), uploader=meta.get("uploader", ""), prompt=f"Remake of \"{meta.get('title', '')[:80]}\"" + (f" — {p['notes']}" if p.get("notes") else ""),
+             seconds=round(sum(x["dur"] for x in plan), 2)); save()
+    ims, au = cast_refs(p, job["id"]); done = []
+    for k, sh in enumerate(plan):
+        wait_cool(job)
+        job["progress"].update(seg=k + 1, segs=len(plan), step=0, steps=0, phase=f"shot {k + 1} of {len(plan)} · {sh['dur']:g} s with your cast"); save()
+        prompt = subjects(p, au and sh["words"]) + official(sh["prompt"]) + (f'\n\n<Subject 1> says, "{sh["words"]}"' if sh["words"] else "")
+        g, info = W.cast_graph(p["preset"], prompt, sh["dur"], int(p["seed"]) + k, f"studio/{job['id']}_s{k + 1}", ims, au, vae8=bool(p.get("vae8")))
+        pid = comfy_post(g); job["progress"]["engine"] = info["engine"]; save()
+        files = [f for f in comfy_wait(pid, job) if f.endswith(".mp4") and os.path.basename(f).startswith(f"{job['id']}_s{k + 1}_")]
+        if not files: raise RuntimeError(f"shot {k + 1} produced no video")
+        seg = f"{d}/seg{k + 1:02d}.mp4"; shutil.move(files[0], seg)
+        def rerender(pr, bump, k=k, sh=sh):
+            g2, _ = W.cast_graph(p["preset"], pr, sh["dur"], int(p["seed"]) + k + bump, f"studio/{job['id']}_s{k + 1}r", ims, au, vae8=bool(p.get("vae8")))
+            fs = [f for f in comfy_wait(comfy_post(g2), job) if f.endswith(".mp4") and os.path.basename(f).startswith(f"{job['id']}_s{k + 1}r_")]
+            if not fs: raise RuntimeError(f"shot {k + 1} re-take produced no video")
+            out = f"{d}/seg{k + 1:02d}.retake.mp4"; shutil.move(fs[0], out); return out
+        seg = directed(job, k, seg, prompt, rerender); done.append(seg)
+        job["outputs"] = [{"file": os.path.basename(x), "kind": "segment"} for x in done]; save()
+    if len(done) > 1:
+        job["progress"]["phase"] = "cutting the shots together"; save()
+        rc, log = stitch.join_keyframes(done, f"{d}/film.mp4")
+        if rc: raise RuntimeError("join failed: " + log)
+        main = f"{d}/film.mp4"
+    else:
+        main = done[0]
+    main = add_score(job, main)
+    stitch.poster(main, f"{d}/poster.jpg", at=min(1.5, max(0.2, stitch.probe(main)["dur"] / 3)))
+    job["outputs"].insert(0, {"file": os.path.basename(main), "kind": "film" if len(done) > 1 else "video", "poster": "poster.jpg"})
+    job["outputs"].append({"file": "source/source.mp4", "kind": "original Short"})
+    for f in os.listdir(COMFY_IN):
+        if f.startswith(f"studio_{job['id']}_"): os.remove(os.path.join(COMFY_IN, f))
+
+
+def run_video(job):
+    p = job["params"]; d = f"{LIB}/{job['id']}"; os.makedirs(d, exist_ok=True)
+    if is_cast(p): return run_cast(job)
+    segs = plan_segments(p) if job["kind"] == "chain" else [float(p["seconds"])]
+    beats = [b.strip() for b in (p.get("beats") or "").splitlines() if b.strip()]
+    first_image = to_input(p["first_image_path"], f"studio_{job['id']}_first{os.path.splitext(p['first_image_path'])[1]}") if p.get("first_image_path") else None
+    done = []; prev_in = None; prev_frames = 0
+    for k, sec in enumerate(segs):
+        wait_cool(job)
+        job["progress"].update(seg=k + 1, segs=len(segs), step=0, steps=0, phase=f"segment {k + 1} of {len(segs)} · {sec:g} s"); save()
+        prompt = p["prompt"] if not beats else (p["prompt"] + "\n\nThis part: " + beats[min(k, len(beats) - 1)])
+        graph, info = vgraph(p, prompt, sec, int(p["seed"]) + k, f"studio/{job['id']}_s{k + 1}",
+                                    first_image=first_image if k == 0 else None, guide_video=prev_in, force_h3=job["kind"] == "chain")
+        if prev_in:
+            graph["33"]["inputs"]["batch_index"] = max(0, prev_frames - W.GUIDE_FRAMES)
+            graph["34"]["inputs"]["start_index"] = max(0.0, (prev_frames - W.GUIDE_FRAMES) / W.FPS)
+        pid = comfy_post(graph); job["progress"]["engine"] = info["engine"]; save()
+        files = [f for f in comfy_wait(pid, job) if f.endswith(".mp4") and os.path.basename(f).startswith(f"{job['id']}_s{k + 1}_")]
+        if not files: raise RuntimeError(f"segment {k + 1} produced no video")
+        seg = f"{d}/seg{k + 1:02d}.mp4"; shutil.move(files[0], seg)
+        def rerender(pr, bump, k=k, sec=sec, prev=prev_in, pf=prev_frames):
+            g2, _ = vgraph(p, pr, sec, int(p["seed"]) + k + bump, f"studio/{job['id']}_s{k + 1}r",
+                                  first_image=first_image if k == 0 else None, guide_video=prev, force_h3=job["kind"] == "chain")
+            if prev:
+                g2["33"]["inputs"]["batch_index"] = max(0, pf - W.GUIDE_FRAMES); g2["34"]["inputs"]["start_index"] = max(0.0, (pf - W.GUIDE_FRAMES) / W.FPS)
+            fs = [f for f in comfy_wait(comfy_post(g2), job) if f.endswith(".mp4") and os.path.basename(f).startswith(f"{job['id']}_s{k + 1}r_")]
+            if not fs: raise RuntimeError(f"segment {k + 1} re-take produced no video")
+            out = f"{d}/seg{k + 1:02d}.retake.mp4"; shutil.move(fs[0], out); return out
+        seg = directed(job, k, seg, prompt, rerender); done.append(seg)
+        prev_in = to_input(seg, f"studio_{job['id']}_seg{k + 1:02d}.mp4"); prev_frames = stitch.probe(seg)["frames"] or info["frames"]
+        job["outputs"] = [{"file": os.path.basename(x), "kind": "segment"} for x in done]; save()
+    if len(done) > 1:
+        job["progress"]["phase"] = "joining the segments"; save()
+        rc, log = stitch.join(done, f"{d}/film.mp4", guide_frames=W.GUIDE_FRAMES)
+        if rc: raise RuntimeError("join failed: " + log)
+        main = f"{d}/film.mp4"
+    else:
+        main = done[0]
+    main = add_score(job, main)
+    vo = add_voiceover(job, main)
+    if vo != main: job["outputs"].insert(0, {"file": os.path.basename(main), "kind": "without voice-over"}); main = vo
+    stitch.poster(main, f"{d}/poster.jpg", at=min(1.5, max(0.2, stitch.probe(main)["dur"] / 3)))
+    job["outputs"].insert(0, {"file": os.path.basename(main), "kind": "film" if len(done) > 1 else "video", "poster": "poster.jpg"})
+    for f in os.listdir(COMFY_IN):
+        if f.startswith(f"studio_{job['id']}_"): os.remove(os.path.join(COMFY_IN, f))
+
+
+def directed(job, k, seg, prompt, rerender):
+    """the director watches segment k; with review='retake' a weak take (score <= 5 or off-prompt) is re-rendered once with its fix, and the
+    better-scored take is kept. rerender(prompt, seed_bump) -> path of the new take."""
+    mode = job["params"].get("review", "retake")
+    if mode == "off": return seg
+    job["progress"]["phase"] = f"director is watching segment {k + 1}"; save()
+    try: rv = DIR.review(seg, prompt)
+    except Exception as e:
+        job.setdefault("reviews", {})[str(k + 1)] = {"error": f"review skipped: {type(e).__name__}: {str(e)[:160]}"}; save(); return seg
+    rv["take"] = 1; job.setdefault("reviews", {})[str(k + 1)] = rv; save()
+    if mode != "retake" or (rv["score"] > 5 and rv.get("matches_prompt", True)) or not rv.get("fix"): return seg
+    job["progress"]["phase"] = f"segment {k + 1}: re-take (director scored {rv['score']}/10)"; save()
+    new = rerender(prompt + "\n\nDirector's note for this take: " + rv["fix"], 100)
+    try: rv2 = DIR.review(new, prompt)
+    except Exception: rv2 = {"score": 0}
+    rv2["take"] = 2; rv2["first"] = rv
+    if rv2.get("score", 0) > rv["score"]:
+        os.replace(new, seg); rv2["kept"] = "re-take"
+    else:
+        os.remove(new); rv2["kept"] = "first take"
+    job["reviews"][str(k + 1)] = rv2; save(); return seg
+
+
+def run_keyframes(job):
+    """images 1..n in order; clip i runs from image i to image i+1 (H3 first-and-last frame, with sound); the clips are joined."""
+    p = job["params"]; d = f"{LIB}/{job['id']}"; os.makedirs(d, exist_ok=True)
+    names = [to_input(f"{ROOT}/{im}", f"studio_{job['id']}_k{i + 1:02d}{os.path.splitext(im)[1]}") for i, im in enumerate(p["images"])]
+    lines = [x.strip() for x in (p.get("beats") or "").splitlines() if x.strip()]
+    done = []
+    for k, sec in enumerate(p["gaps"]):
+        wait_cool(job)
+        job["progress"].update(seg=k + 1, segs=len(p["gaps"]), step=0, steps=0, phase=f"clip {k + 1} of {len(p['gaps'])}: image {k + 1} → {k + 2} · {sec:g} s"); save()
+        prompt = p["prompt"] + (("\n\nThis part: " + lines[min(k, len(lines) - 1)]) if lines else "")
+        graph, info = vgraph(p, prompt, sec, int(p["seed"]) + k, f"studio/{job['id']}_s{k + 1}", first_image=names[k], last_image=names[k + 1])
+        pid = comfy_post(graph); job["progress"]["engine"] = info["engine"]; save()
+        files = [f for f in comfy_wait(pid, job) if f.endswith(".mp4") and os.path.basename(f).startswith(f"{job['id']}_s{k + 1}_")]
+        if not files: raise RuntimeError(f"clip {k + 1} produced no video")
+        seg = f"{d}/seg{k + 1:02d}.mp4"; shutil.move(files[0], seg)
+        def rerender(pr, bump, k=k, sec=sec):
+            g2, _ = vgraph(p, pr, sec, int(p["seed"]) + k + bump, f"studio/{job['id']}_s{k + 1}r", first_image=names[k], last_image=names[k + 1])
+            fs = [f for f in comfy_wait(comfy_post(g2), job) if f.endswith(".mp4") and os.path.basename(f).startswith(f"{job['id']}_s{k + 1}r_")]
+            if not fs: raise RuntimeError(f"clip {k + 1} re-take produced no video")
+            out = f"{d}/seg{k + 1:02d}.retake.mp4"; shutil.move(fs[0], out); return out
+        seg = directed(job, k, seg, prompt, rerender); done.append(seg)
+        job["outputs"] = [{"file": os.path.basename(x), "kind": "segment"} for x in done]; save()
+    job["progress"]["phase"] = "joining the clips"; save()
+    main = f"{d}/film.mp4"; rc, log = stitch.join_keyframes(done, main)
+    if rc: raise RuntimeError("join failed: " + log)
+    main = add_score(job, main)
+    vo = add_voiceover(job, main)
+    if vo != main: job["outputs"].insert(0, {"file": os.path.basename(main), "kind": "without voice-over"}); main = vo
+    stitch.poster(main, f"{d}/poster.jpg", at=min(1.5, max(0.2, stitch.probe(main)["dur"] / 3)))
+    job["outputs"].insert(0, {"file": os.path.basename(main), "kind": "film", "poster": "poster.jpg"})
+    for f in os.listdir(COMFY_IN):
+        if f.startswith(f"studio_{job['id']}_"): os.remove(os.path.join(COMFY_IN, f))
+
+
+def vworker(*args, t=1800):
+    """run voice.py in the voice environment; returns its JSON line or raises with its reason"""
+    r = subprocess.run([TTS_PY, VOICE_PY, *args], capture_output=True, text=True, timeout=t)
+    line = next((l for l in reversed((r.stdout or "").splitlines()) if l.startswith("{")), "")
+    try: d = json.loads(line)
+    except ValueError: d = {"ok": False, "error": (r.stderr or r.stdout or "no output")[-400:]}
+    if not d.get("ok"): raise RuntimeError(d.get("error") or "voice worker failed")
+    return d
+
+
+def run_voice(job):
+    """a voice from a Short: download, remove music, transcribe; the director watches it and picks a clean stretch of the wanted
+    speaker; that stretch becomes the reference, and a preview line is spoken in the cloned voice"""
+    p = job["params"]; vid = job["id"]; d = f"{VOICES}/{vid}"; os.makedirs(d, exist_ok=True)
+    job["progress"].update(phase="downloading the video and removing the music (Demucs), then transcribing (Whisper)"); save()
+    cap = vworker("capture", p["url"], d, t=2400)
+    meta = json.load(open(f"{d}/transcript.json"))
+    if not meta["segments"]: raise RuntimeError("no speech was found in that video")
+    job["progress"].update(phase=f"the director is watching \"{cap.get('title', '')[:60]}\" to find {p.get('who') or 'the main speaker'}"); save()
+    pick = DIR.pick_voice(f"{d}/source.mp4", meta["segments"], p.get("who", ""), meta["duration"])
+    job["progress"].update(phase=f"cutting {pick['start']:.1f}–{pick['end']:.1f} s and cloning a preview"); save()
+    cut = vworker("cut", d, str(pick["start"]), str(pick["end"]))
+    vworker("say", d, p.get("preview") or "Hello. This is a preview of the matched voice, ready for your next film.", f"{d}/preview.wav", t=900)
+    v = {"id": vid, "label": p.get("label") or meta["title"][:60] or "voice", "url": p["url"], "title": meta["title"], "uploader": meta.get("uploader"),
+         "who": p.get("who", ""), "pick": pick, "ref_text": cut["ref_text"], "consent": True, "created": now()}
+    json.dump(v, open(f"{d}/voice.json", "w"), indent=1)
+    job["outputs"] = [{"file": "preview.wav", "kind": "voice"}, {"file": "ref.wav", "kind": "reference"}]; job["voice"] = v
+
+
+def voices():
+    out = []
+    for vid in sorted(os.listdir(VOICES), reverse=True):
+        try: out.append(json.load(open(f"{VOICES}/{vid}/voice.json")))
+        except Exception: pass
+    return out
+
+
+def add_voiceover(job, main):
+    """speak the job's voice-over lines in its cloned voice and lay them over the film: the film's own sound ducks under the voice;
+    a voice-over longer than the film holds the last frame"""
+    p = job["params"]; vid = p.get("voice"); text = (p.get("vo") or "").strip()
+    if not vid or not text: return main
+    vd = f"{VOICES}/{vid}"
+    if not os.path.exists(f"{vd}/ref.json"): raise RuntimeError("that voice is gone from the Voices tab")
+    job["progress"].update(phase="speaking the voice-over in the cloned voice (Qwen3-TTS)"); save()
+    d = os.path.dirname(main); vo = f"{d}/voiceover.wav"; vworker("say", vd, text, vo, t=900)
+    vdur, fdur = stitch.probe(vo)["dur"] or 0, stitch.probe(main)["dur"]; lead = 0.4; extra = max(0.0, lead + vdur + 0.3 - fdur)
+    out = f"{d}/film_vo.mp4"
+    graph = (f"[0:v]tpad=stop_mode=clone:stop_duration={extra:.2f}[v];[1:a]adelay={int(lead * 1000)}|{int(lead * 1000)},apad[vo];"
+             f"[vo]asplit=2[vo1][vo2];[0:a]apad=pad_dur={extra:.2f}[bed];[bed][vo1]sidechaincompress=threshold=0.03:ratio=8:attack=20:release=400[duck];"
+             f"[duck][vo2]amix=inputs=2:duration=first:normalize=0[a]")
+    r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", main, "-i", vo, "-filter_complex", graph, "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-crf", "14",
+                        "-preset", "slow", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "256k", "-movflags", "+faststart", out], capture_output=True, text=True)
+    if r.returncode: raise RuntimeError("voice-over mix failed: " + (r.stderr or "")[-300:])
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+LEVELS = {"low": 0.25, "medium": 0.4, "high": 0.6}
+
+
+def make_music(job, engine, style, lyrics, seconds, seed, tag, bpm=None, key=None):
+    """render one piece in ComfyUI -> (flac path, seconds it came out)"""
+    kw = {"bpm": bpm or 100, "key": key or "C major"} if engine == "fast" else {}
+    pid = comfy_post(MU.graph(engine, style, lyrics, seconds, seed, f"studio/{job['id']}_{tag}", **kw))
+    files = [f for f in comfy_wait(pid, job) if f.endswith(".flac") and os.path.basename(f).startswith(f"{job['id']}_{tag}")]
+    if not files: raise RuntimeError("no music came back")
+    return files[0], stitch.probe(files[0])["dur"] or 0
+
+
+def midi_worker(*args, t=600):
+    r = subprocess.run([MU.MIDI_PY, MU.MIDI_TOOL, *args], capture_output=True, text=True, timeout=t)
+    line = next((l for l in reversed((r.stdout or "").splitlines()) if l.startswith("{")), "")
+    try: d = json.loads(line)
+    except ValueError: d = {"ok": False, "error": (r.stderr or r.stdout or "no output")[-300:]}
+    if not d.get("ok"): raise RuntimeError(d.get("error") or "MIDI worker failed")
+    return d
+
+
+def run_midi(job):
+    """the MIDI with the chosen instruments (MuseScore General soundfont), then optionally restyled by ACE-Step"""
+    p = job["params"]; d = f"{LIB}/{job['id']}"; os.makedirs(d, exist_ok=True)
+    job["progress"].update(phase="playing the MIDI with your instruments"); save()
+    json.dump({"parts": p["parts"], "transpose": p["transpose"], "speed": p["speed"]}, open(f"{d}/instruments.json", "w"))
+    shutil.copy(f"{ROOT}/{p['midi']}", f"{d}/source.mid")
+    r = midi_worker("render", f"{d}/source.mid", f"{d}/midi_render.wav", f"{d}/instruments.json")
+    outs = []
+    if p.get("restyle"):
+        job["progress"].update(phase=f"restyling it with ACE-Step (strength {p['strength']:.2f})"); save()
+        name = to_input(f"{d}/midi_render.wav", f"studio_{job['id']}_midi.wav")
+        pid = comfy_post(MU.restyle_graph(p["style"], name, r["seconds"], p["seed"], f"studio/{job['id']}_mus", p["strength"], p.get("bpm") or 120))
+        files = [f for f in comfy_wait(pid, job) if f.endswith(".flac") and os.path.basename(f).startswith(f"{job['id']}_mus")]
+        if not files: raise RuntimeError("the restyle produced no audio")
+        shutil.move(files[0], f"{d}/music.flac"); os.remove(os.path.join(COMFY_IN, name)); outs.append({"file": "midi_render.wav", "kind": "MIDI render"})
+    else:
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", f"{d}/midi_render.wav", f"{d}/music.flac"], check=True)
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", f"{d}/music.flac", "-c:a", "libmp3lame", "-b:a", "256k", f"{d}/music.mp3"], check=True)
+    job["outputs"] = [{"file": "music.mp3", "kind": "music"}, {"file": "music.flac", "kind": "lossless"}] + outs + [{"file": "source.mid", "kind": "MIDI"}]
+    job["music"] = {"engine": "MIDI" + (" + ACE-Step restyle" if p.get("restyle") else ""), "seconds": round(stitch.probe(f"{d}/music.flac")["dur"] or r["seconds"], 1)}
+
+
+def run_music(job):
+    p = job["params"]; d = f"{LIB}/{job['id']}"; os.makedirs(d, exist_ok=True); eng = p["engine"]
+    if not MU.ready(eng): raise RuntimeError(f"{MU.ENGINES[eng]} is not installed")
+    if eng == "midi": return run_midi(job)
+    if not p.get("style"):
+        job["progress"].update(phase="the director is writing the music brief"); save()
+        b = DIR.music_brief(p["idea"], p["seconds"], eng); p.update(style=b["style"], bpm=b["bpm"], key=b["key"], brief_by=b["by"])
+    job["progress"].update(phase=f"{MU.ENGINES[eng]} · {p['seconds']:g} s" + (" with lyrics" if p.get("lyrics", "").strip() else " · instrumental")); save()
+    f, dur = make_music(job, eng, p["style"], p.get("lyrics", ""), p["seconds"], p["seed"], "mus", p.get("bpm"), p.get("key"))
+    shutil.move(f, f"{d}/music.flac")
+    r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", f"{d}/music.flac", "-c:a", "libmp3lame", "-b:a", "256k", f"{d}/music.mp3"], capture_output=True, text=True)
+    if r.returncode: raise RuntimeError("mp3 encode failed: " + r.stderr[-300:])
+    job["outputs"] = [{"file": "music.mp3", "kind": "music"}, {"file": "music.flac", "kind": "lossless"}]; job["music"] = {"engine": MU.ENGINES[eng], "seconds": round(dur, 1)}
+
+
+def add_score(job, main):
+    """score the film: a track its exact length (Best may end early -> looped), 1 s fade in, 2.5 s fade out, under the film's own sound"""
+    p = job["params"]; eng = p.get("music")
+    if eng not in ("fast", "best") or not MU.ready(eng): return main
+    d = os.path.dirname(main); dur = stitch.probe(main)["dur"]; style = (p.get("music_style") or "").strip(); bpm = key = None
+    if not style:
+        job["progress"].update(phase="the director is writing the score brief"); save()
+        try: b = DIR.music_brief(p.get("prompt", ""), dur, eng); style, bpm, key = b["style"], b["bpm"], b["key"]; p["music_brief"] = b
+        except Exception: style = "cinematic instrumental film score, emotive, matching this scene: " + (p.get("picture") or p.get("prompt", ""))[:300]
+    job["progress"].update(phase=f"scoring the film · {MU.ENGINES[eng]} · {dur:.0f} s"); save()
+    f, got = make_music(job, eng, style, "", math.ceil(dur) + 1, int(p["seed"]), "score", bpm, key)
+    track = f"{d}/score.flac"; shutil.move(f, track)
+    lv = LEVELS.get(p.get("music_level"), 0.4); out = f"{d}/film_music.mp4"
+    loop = ["-stream_loop", "-1"] if got < dur - 0.5 else []
+    graph = (f"[1:a]atrim=0:{dur:.3f},asetpts=PTS-STARTPTS,afade=t=in:st=0:d=1,afade=t=out:st={max(0, dur - 2.5):.3f}:d=2.5,volume={lv}[m];"
+             f"[0:a][m]amix=inputs=2:duration=first:normalize=0[a]")
+    r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", main, *loop, "-i", track, "-filter_complex", graph, "-map", "0:v", "-map", "[a]", "-c:v", "copy",
+                        "-c:a", "aac", "-b:a", "256k", "-movflags", "+faststart", out], capture_output=True, text=True)
+    if r.returncode: raise RuntimeError("music mix failed: " + (r.stderr or "")[-300:])
+    job["outputs"].insert(0, {"file": os.path.basename(main), "kind": "without music"}); job["outputs"].insert(0, {"file": "score.flac", "kind": "score"})
+    return out
+
+
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+SEG_RE = re.compile(r"^seg(\d\d)(?:\.v(\d+))?\.mp4$")
+FILM_KINDS = ("video", "chain", "keyframes", "recreate")
+
+
+def film_takes(jid):
+    """segment number -> its takes in the film's folder: segNN.mp4 (as rendered) then segNN.vK.mp4 (editor re-renders)"""
+    takes = {}
+    for f in os.listdir(f"{LIB}/{jid}"):
+        m = SEG_RE.match(f)
+        if m: takes.setdefault(int(m.group(1)), []).append((int(m.group(2) or 0), f))
+    return {k: [f for _, f in sorted(v)] for k, v in sorted(takes.items())}
+
+
+def seg_prompt(p, k):
+    if p.get("shots"): return official(p["shots"][k]["prompt"]) + (f'\n\n<Subject 1> says, "{p["shots"][k]["words"]}"' if p["shots"][k]["words"] else "")
+    lines = [x.strip() for x in (p.get("beats") or "").splitlines() if x.strip()]
+    return p["prompt"] + (("\n\nThis part: " + lines[min(k, len(lines) - 1)]) if lines else "")
+
+
+def seg_seconds(j, k):
+    p = j["params"]
+    if j["kind"] == "recreate": return float(p["shots"][k]["dur"])
+    return float(p["gaps"][k]) if j["kind"] == "keyframes" else plan_segments(p)[k] if j["kind"] == "chain" else float(p["seconds"])
+
+
+def film_job(fid):
+    j = JOBS.get(fid)
+    if not j or j["kind"] not in FILM_KINDS or j["status"] != "done": raise ValueError("open a finished video or film")
+    return j
+
+
+def edit_state(j):
+    takes = film_takes(j["id"]); p = j["params"]
+    e = j.get("edit") or {"clips": [{"seg": k, "src": v[0], "in": 0.0, "out": None, "on": True} for k, v in takes.items()],
+                          "music": p.get("music", ""), "music_style": p.get("music_style", ""), "music_level": p.get("music_level", "medium"),
+                          "voice": p.get("voice", ""), "vo": p.get("vo", ""), "versions": []}
+    info = {}
+    for v in takes.values():
+        for f in v: pr = stitch.probe(f"{LIB}/{j['id']}/{f}"); info[f] = {"dur": round(pr["dur"], 3), "frames": pr["frames"]}
+    return {"id": j["id"], "kind": j["kind"], "preset": p.get("preset"), "seconds": p.get("seconds"), "prompt": p.get("prompt", ""), "edit": e,
+            "takes": {str(k): v for k, v in takes.items()}, "info": info, "prompts": {str(k): seg_prompt(p, k - 1) for k in takes},
+            "busy": [x["id"] for x in JOBS.values() if x["kind"] in ("retake", "export") and x["params"].get("film") == j["id"] and x["status"] in ("queued", "waiting_gpu", "running")]}
+
+
+def edit_save(j, b):
+    takes = film_takes(j["id"]); known = {f for v in takes.values() for f in v}; clips = []
+    for c in (b.get("clips") or [])[:60]:
+        src = str(c.get("src") or ""); m = SEG_RE.match(src)
+        if src not in known or not m: raise ValueError(f"unknown clip {src}")
+        dur = stitch.probe(f"{LIB}/{j['id']}/{src}")["dur"]
+        i = max(0.0, min(dur - 0.25, float(c.get("in") or 0))); o = c.get("out")
+        o = None if o in (None, "", 0, "0") or float(o) >= dur - 0.01 else max(i + 0.25, float(o))
+        clips.append({"seg": int(m.group(1)), "src": src, "in": round(i, 3), "out": None if o is None else round(o, 3), "on": bool(c.get("on", True))})
+    if not any(c["on"] for c in clips): raise ValueError("keep at least one clip")
+    e = j.get("edit") or {"versions": []}
+    e.update(clips=clips, voice=str(b.get("voice") or ""), vo=str(b.get("vo") or "")[:3000], **scorep(b)); j["edit"] = e; save(); return e
+
+
+def run_retake(job):
+    """one segment again, with a new prompt/seed, guided exactly like the original (previous segment's tail / first image / its keyframes)"""
+    q = job["params"]; fj = JOBS[q["film"]]; p = fj["params"]; d = f"{LIB}/{fj['id']}"; k = int(q["seg"]) - 1; tag = f"{fj['id']}_e{job['id'][-4:]}"
+    sec = seg_seconds(fj, k); first = last = guide = None; gframes = 0
+    if fj["kind"] == "keyframes":
+        first = to_input(f"{ROOT}/{p['images'][k]}", f"studio_{tag}_a{os.path.splitext(p['images'][k])[1]}")
+        last = to_input(f"{ROOT}/{p['images'][k + 1]}", f"studio_{tag}_b{os.path.splitext(p['images'][k + 1])[1]}")
+    elif k == 0 and p.get("first_image_path"):
+        first = to_input(p["first_image_path"], f"studio_{tag}_first{os.path.splitext(p['first_image_path'])[1]}")
+    elif k > 0 and fj["kind"] == "chain":
+        prev = f"{d}/seg{k:02d}.mp4"; guide = to_input(prev, f"studio_{tag}_guide.mp4"); gframes = stitch.probe(prev)["frames"]
+    job["progress"].update(seg=1, segs=1, phase=f"re-rendering segment {k + 1} of the film · {sec:g} s"); save()
+    if is_cast(p):
+        ims, au = cast_refs(p, tag); guide = None
+        g, info = W.cast_graph(p["preset"], cast_prompt(p, q["prompt"]), sec, int(q["seed"]), f"studio/{tag}", ims, au, vae8=bool(p.get("vae8")))
+    else:
+        g, info = vgraph(p, q["prompt"], sec, int(q["seed"]), f"studio/{tag}", first_image=first, last_image=last, guide_video=guide, force_h3=fj["kind"] == "chain")
+    if guide:
+        g["33"]["inputs"]["batch_index"] = max(0, gframes - W.GUIDE_FRAMES); g["34"]["inputs"]["start_index"] = max(0.0, (gframes - W.GUIDE_FRAMES) / W.FPS)
+    pid = comfy_post(g); job["progress"]["engine"] = info["engine"]; save()
+    files = [f for f in comfy_wait(pid, job) if f.endswith(".mp4") and os.path.basename(f).startswith(f"{tag}_")]
+    if not files: raise RuntimeError("the re-render produced no video")
+    n = max([0] + [int(SEG_RE.match(f).group(2) or 0) for f in film_takes(fj["id"]).get(k + 1, [])]) + 1
+    out = f"{d}/seg{k + 1:02d}.v{n}.mp4"; shutil.move(files[0], out)
+    if q.get("review", True):
+        try: rv = DIR.review(out, q["prompt"]); job["reviews"] = {"1": rv}
+        except Exception as e: job["reviews"] = {"1": {"error": f"review skipped: {str(e)[:120]}"}}
+    job["outputs"] = [{"file": os.path.basename(out), "kind": "take"}]; job["take"] = os.path.basename(out)
+    for f in os.listdir(COMFY_IN):
+        if f.startswith(f"studio_{tag}_"): os.remove(os.path.join(COMFY_IN, f))
+
+
+def run_export(job):
+    """the saved edit -> a new version in <film>/vN/: clips cut in order (a chain segment's 22 guide frames always dropped, a keyframe clip's repeated
+    boundary frame dropped after its own predecessor), 60 ms sound fades at every cut, then score and voice-over if set"""
+    fj = JOBS[job["params"]["film"]]; e = fj["edit"]; d = f"{LIB}/{fj['id']}"
+    clips = [c for c in e["clips"] if c["on"]]
+    n = len(e.get("versions") or []) + 1; vd = f"{d}/v{n}"; os.makedirs(vd, exist_ok=True)
+    job["progress"].update(seg=1, segs=1, phase=f"cutting {len(clips)} clip(s) into version {n}"); save()
+    inputs, parts, prev, xs, lens = [], [], None, [], []
+    for i, c in enumerate(clips):
+        src = f"{d}/{c['src']}"; dur = stitch.probe(src)["dur"]
+        cast = is_cast(fj["params"])
+        if fj["kind"] == "chain" and not cast: head = W.GUIDE_FRAMES / W.FPS if c["seg"] > 1 else 0.0       # a guided segment repeats its predecessor's tail
+        elif fj["kind"] == "keyframes" or cast: head = 1 / W.FPS if prev == c["seg"] - 1 else 0.0            # the boundary frame, after its own predecessor
+        else: head = 0.0
+        a = max(c["in"], head); b = min(c["out"] or dur, dur)
+        if b - a < 0.2: raise RuntimeError(f"clip {i + 1} ({c['src']}) is shorter than 0.2 s after trimming")
+        # a later clip lends up to 60 ms of the sound just before its in-point as a crossfade (picture/sound sync kept)
+        x = min(0.06, a) if i else 0.0; xs.append(x); lens.append(b - a)
+        inputs += ["-i", src]
+        parts.append(f"[{i}:v]trim=start={a:.4f}:end={b:.4f},setpts=PTS-STARTPTS[v{i}];[{i}:a]atrim=start={a - x:.4f}:end={b:.4f},asetpts=PTS-STARTPTS[a{i}]")
+        prev = c["seg"]
+    achain, last, T = [], "a0", lens[0]
+    for i in range(1, len(clips)):
+        if xs[i] >= 0.005: achain.append(f"[{last}][a{i}]acrossfade=d={xs[i]:.4f}:c1=qsin:c2=qsin[ax{i}]")
+        else: achain.append(f"[{last}]afade=t=out:st={T - 0.01:.4f}:d=0.01[af{i}];[a{i}]afade=t=in:st=0:d=0.01[ai{i}];[af{i}][ai{i}]concat=n=2:v=0:a=1[ax{i}]")   # nothing to lend: 10 ms fades
+        last = f"ax{i}"; T += lens[i]
+    graph = ";".join(parts + ["".join(f"[v{i}]" for i in range(len(clips))) + f"concat=n={len(clips)}:v=1:a=0[v]"] + achain)
+    cut = f"{vd}/cut.mp4"
+    r = subprocess.run(["ffmpeg", "-v", "error", "-y", *inputs, "-filter_complex", graph, "-map", "[v]", "-map", f"[{last}]", "-c:v", "libx264", "-preset", "slow", "-crf", "14",
+                        "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "256k", "-movflags", "+faststart", cut], capture_output=True, text=True)
+    if r.returncode: raise RuntimeError("cut failed: " + (r.stderr or "")[-400:])
+    job["params"].update({k: v for k, v in fj["params"].items() if k not in ("film",)}); job["params"].update(film=fj["id"], music=e.get("music", ""),
+        music_style=e.get("music_style", ""), music_level=e.get("music_level", "medium"), voice=e.get("voice", ""), vo=e.get("vo", ""))
+    main = cut
+    if job["params"]["music"] in ("fast", "best"):
+        wait_gpu(job)
+        if not ensure_comfy(): raise RuntimeError("ComfyUI did not start")
+        job["status"] = "running"; save(); main = add_score(job, main)
+    main = add_voiceover(job, main)
+    stitch.poster(main, f"{vd}/poster.jpg", at=min(1.5, max(0.2, stitch.probe(main)["dur"] / 3)))
+    rel = f"v{n}/{os.path.basename(main)}"; dur = stitch.probe(main)["dur"]
+    e.setdefault("versions", []).append({"v": n, "file": rel, "poster": f"v{n}/poster.jpg", "created": now(), "clips": len(clips), "dur": round(dur, 2)})
+    fj["outputs"].insert(0, {"file": rel, "kind": f"edit v{n}", "poster": f"v{n}/poster.jpg"})
+    job["outputs"] = [{"file": rel, "kind": f"edit v{n}"}]; save()
+
+
+def run_edit(job):
+    """the references into ComfyUI's input dir, one Turbo edit per seed (count), saved as img01.."""
+    p = job["params"]; d = f"{LIB}/{job['id']}"; os.makedirs(d, exist_ok=True)
+    names = [to_input(f"{ROOT}/{im}", f"studio_{job['id']}_ref{i + 1}{os.path.splitext(im)[1]}") for i, im in enumerate(p["images"])]
+    for k in range(p["count"]):
+        job["progress"].update(seg=k + 1, segs=p["count"], phase=f"editing · {len(names)} reference(s) · {k + 1} of {p['count']}"); save()
+        pid = comfy_post(W.edit_graph(names, p["prompt"], p["seed"] + k, f"studio/{job['id']}_e{k + 1}", p.get("negative", "")))
+        files = [f for f in comfy_wait(pid, job) if f.lower().endswith(".png") and os.path.basename(f).startswith(f"{job['id']}_e{k + 1}")]
+        if not files: raise RuntimeError("the edit produced no image")
+        dst = f"{d}/img{k + 1:02d}.png"; shutil.move(files[0], dst); job["outputs"].append({"file": os.path.basename(dst), "kind": "image"}); save()
+    for f in os.listdir(COMFY_IN):
+        if f.startswith(f"studio_{job['id']}_"): os.remove(os.path.join(COMFY_IN, f))
+
+
+def run_image(job):
+    p = job["params"]; d = f"{LIB}/{job['id']}"; os.makedirs(d, exist_ok=True)
+    job["progress"].update(phase=f"{p['model']} · {p['count']} image(s)"); save()
+    pid = comfy_post(W.image_graph(p["model"], p["prompt"], p["w"], p["h"], p["count"], p["seed"], f"studio/{job['id']}_img", p.get("negative", "")))
+    files = [f for f in comfy_wait(pid, job) if f.lower().endswith((".png", ".jpg", ".webp")) and os.path.basename(f).startswith(f"{job['id']}_img")]
+    if not files: raise RuntimeError("no image came back")
+    for i, f in enumerate(files):
+        dst = f"{d}/img{i + 1:02d}.png"; shutil.move(f, dst); job["outputs"].append({"file": os.path.basename(dst), "kind": "image"})
+
+
+def worker():
+    while True:
+        job = None
+        with LOCK:
+            q = sorted((j for j in JOBS.values() if j["status"] in ("queued", "waiting_gpu")), key=lambda j: j["created"])
+            job = q[0] if q else None
+        if not job:
+            GPU["busy"] = ""; time.sleep(2); continue
+        try:
+            if job["kind"] == "export":                                       # ffmpeg only, unless it re-scores (run_export asks for the GPU then)
+                job.update(status="running", started=now()); GPU["busy"] = job["id"]; save(); run_export(job)
+            elif job["kind"] == "voice":
+                if meminfo_gib() < 8: raise RuntimeError(f"only {meminfo_gib():.0f} GiB free — a voice needs ~8 GiB (stop something first)")
+                job.update(status="running", started=now()); GPU["busy"] = job["id"]; save(); run_voice(job)
+            else:
+                wait_gpu(job)
+                if not ensure_comfy(): raise RuntimeError(f"ComfyUI is not answering at {COMFY} (see COMFY_URL / COMFY_SERVICE in studio.env)")
+                job.update(status="running", started=now()); GPU["busy"] = job["id"]; save()
+                run_recreate(job) if job["kind"] == "recreate" else run_retake(job) if job["kind"] == "retake" else run_music(job) if job["kind"] == "music" else run_edit(job) if job["kind"] == "edit" else run_image(job) if job["kind"] == "image" else run_keyframes(job) if job["kind"] == "keyframes" else run_video(job)
+            job.update(status="done", finished=now()); job["progress"]["phase"] = "done"
+        except Exception as e:
+            job.update(status="cancelled" if str(e) == "cancelled" else "failed", error=str(e)[:600], finished=now())
+        GPU["busy"] = ""; save()
+
+
+def free_gpu():
+    """the user clicked 'stop <tenant> and render': run GPU_TENANT_STOP"""
+    if not C.TENANT_STOP: return {"error": "no GPU_TENANT_STOP command is configured"}
+    r = subprocess.run(C.TENANT_STOP, shell=True, capture_output=True, text=True, timeout=300)
+    if r.returncode: return {"error": (r.stderr or r.stdout or "stop command failed")[-400:]}
+    GPU["freed_tf"] = True; GPU["note"] = ""; _OWN["v"] = None; return {"done": [f"stopped {C.TENANT_NAME}"]}
+
+
+def restore_tf():
+    if any(j["status"] in ("queued", "waiting_gpu", "running") for j in JOBS.values()): return {"error": "renders are still queued — start it again when they finish"}
+    if not C.TENANT_START: return {"error": "no GPU_TENANT_START command is configured"}
+    if C.COMFY_SERVICE: sh(["systemctl", "--user", "stop", C.COMFY_SERVICE], 60)
+    DIR.stop()                                                                  # the other service usually needs the memory back
+    r = subprocess.run(C.TENANT_START, shell=True, capture_output=True, text=True, timeout=300)
+    if r.returncode: return {"error": (r.stderr or r.stdout or "start command failed")[-400:]}
+    GPU["freed_tf"] = False; return {"started": True, "note": f"{C.TENANT_NAME} is starting"}
+
+
+# ── HTTP ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+def state():
+    o = gpu_owner(); h = heat()
+    return {"jobs": sorted(JOBS.values(), key=lambda j: j["created"], reverse=True)[:60], "gpu": {**o, **GPU, "comfy": comfy_up(), "heat": h},
+            "presets": {k: {**v, "est5": W.estimate_s(k, 5), "est15": W.estimate_s(k, 15)} for k, v in W.VIDEO.items()},
+            "image_models": W.image_models(), "tf_ready": W.tf_ready(), "vae8_ready": W.vae8_ready(), "cast_ready": W.cast_ready(), "music_ready": {e: MU.ready(e) for e in MU.ENGINES}, "gm": MT.GM, "kits": MT.KITS, "music_engines": MU.ENGINES, "music_keys": MU.KEYS, "image_preset": W.IMAGE_PRESET, "guide_frames": W.GUIDE_FRAMES, "director": DIR.status(), "voices": voices(),
+            "voice_ready": os.path.exists(TTS_PY) and os.path.isdir(f"{C.MODELS}/Qwen3-TTS-12Hz-1.7B-Base"), "brand": {"tenant": C.TENANT_NAME}}
+
+
+def vgraph(p, *a, **k):
+    """the job's engine and decoder choice reach every graph (TensorFold covers FastH3 passes only)"""
+    return W.video_graph(p["preset"], *a, engine=p.get("engine", "comfy"), vae8=bool(p.get("vae8")), **k)
+
+
+def eng(b):
+    # TensorFold + the 8-bit decoder unless the job asks otherwise
+    return {"engine": "tensorfold" if b.get("engine", "tensorfold") == "tensorfold" and W.tf_ready() else "comfy",
+            "vae8": bool(b.get("vae8", True)) and W.vae8_ready()}
+
+
+def scorep(b):
+    return {"music": b.get("music") if b.get("music") in ("fast", "best") else "", "music_style": str(b.get("music_style") or "")[:2000],
+            "music_level": b.get("music_level") if b.get("music_level") in LEVELS else "medium"}
+
+
+def midi_params(b):
+    mid = str(b.get("midi") or ""); path = os.path.realpath(os.path.join(ROOT, mid))
+    if not path.startswith(ROOT + "/uploads/") or not path.endswith(".mid") or not os.path.isfile(path): raise ValueError("upload a MIDI file first")
+    parts = {}
+    for k, v in (b.get("parts") or {}).items():
+        ch = int(k)
+        if not 0 <= ch <= 15: raise ValueError("bad MIDI channel")
+        if v == "mute" or (isinstance(v, str) and v.startswith("kit:") and int(v[4:]) in MT.KITS): parts[str(ch)] = v
+        elif isinstance(v, int) and 0 <= v <= 127: parts[str(ch)] = v
+        else: raise ValueError(f"bad instrument for channel {ch}")
+    restyle = bool(b.get("restyle")); style = str(b.get("style") or "").strip()[:2000]
+    if restyle and not style: raise ValueError("describe the style for the AI restyle")
+    names = ", ".join(("mute" if v == "mute" else MT.KITS[int(v[4:])] if isinstance(v, str) else MT.GM[v]) for v in parts.values())
+    return {"engine": "midi", "midi": mid, "parts": parts, "transpose": max(-24, min(24, int(b.get("transpose") or 0))), "speed": max(0.5, min(2.0, float(b.get("speed") or 1.0))),
+            "restyle": restyle, "style": style, "strength": max(0.3, min(0.8, float(b.get("strength") or 0.55))), "seed": int(b.get("seed") or int.from_bytes(os.urandom(3), "big")),
+            "bpm": max(40, min(200, int(float(b.get("bpm") or 120)))), "seconds": float(b.get("seconds") or 30), "lyrics": "", "idea": "",
+            "prompt": f"MIDI · {names}" + (f" · restyled: {style[:120]}" if restyle else "")}
+
+
+def music_params(b):
+    if b.get("engine") == "midi": return midi_params(b)
+    eng = b.get("engine") if b.get("engine") in ("fast", "best") else "fast"
+    style, idea = str(b.get("style") or "").strip()[:3000], str(b.get("idea") or "").strip()[:1000]
+    if not style and not idea: raise ValueError("describe the music (or give the director an idea)")
+    sec = max(5.0, min(240.0, float(b.get("seconds") or 60)))
+    key = b.get("key") if b.get("key") in MU.KEYS else "C major"
+    return {"engine": eng, "style": style, "idea": idea or style, "lyrics": str(b.get("lyrics") or "")[:6000], "seconds": sec,
+            "seed": int(b.get("seed") or int.from_bytes(os.urandom(3), "big")), "bpm": max(40, min(200, int(b.get("bpm") or 100))), "key": key,
+            "prompt": style or idea}
+
+
+def recreate_params(b, preset):
+    url = str(b.get("url") or "").strip()
+    if not re.match(r"^https://(www\.|m\.)?(youtube\.com/(shorts/|watch\?v=)|youtu\.be/)[\w-]{6,}", url): raise ValueError("paste a YouTube Shorts (or YouTube video) link")
+    ims = [str(x) for x in (b.get("cast_images") or [])][:3]
+    if not ims: raise ValueError("add at least one face image for your cast")
+    for im in ims:
+        path = os.path.realpath(os.path.join(ROOT, im))
+        if not path.startswith(ROOT + "/") or not os.path.isfile(path): raise ValueError(f"cast image not found: {im}")
+    if b.get("cast_consent") is not True: raise ValueError("confirm you have the right to use this person's likeness")
+    cv = str(b.get("cast_voice") or "")
+    if cv and (not re.match(r"^[\w-]+$", cv) or not os.path.exists(f"{VOICES}/{cv}/ref.wav")): raise ValueError("that voice is not in the Voices tab")
+    if not W.cast_ready(): raise ValueError("the reference-to-video model is not installed")
+    return {"url": url, "preset": preset if preset in ("draft", "fasthd") else "draft", "max_seconds": max(5.0, min(60.0, float(b.get("max_seconds") or 30))),
+            "notes": str(b.get("notes") or "")[:600], "keep_words": bool(b.get("keep_words", True)), "seed": int(b.get("seed") or int.from_bytes(os.urandom(3), "big")),
+            "review": b.get("review") if b.get("review") in ("off", "note", "retake") else "retake", "cast_images": ims, "cast_voice": cv, "cast_consent": True,
+            "prompt": "Remake of a Short", "seconds": float(b.get("max_seconds") or 30), "vae8": bool(b.get("vae8", True)) and W.vae8_ready(), **scorep(b)}
+
+
+def mk_params(b):
+    mode = b.get("mode", "video"); preset = b.get("preset", "fasthd")
+    if mode == "music": return "music", music_params(b)
+    if mode == "recreate": return "recreate", recreate_params(b, preset)
+    if preset not in W.VIDEO: raise ValueError("unknown preset")
+    seed = int(b.get("seed") or int.from_bytes(os.urandom(3), "big"))
+    if mode == "edit":
+        ims = [str(x) for x in (b.get("images") or [])][:4]
+        if not ims: raise ValueError("add the image(s) to edit")
+        for im in ims:
+            path = os.path.realpath(os.path.join(ROOT, im))
+            if not path.startswith(ROOT + "/") or not os.path.isfile(path): raise ValueError(f"image not found: {im}")
+        pr = str(b.get("picture") or b.get("prompt") or "").strip()[:4000]
+        if not pr: raise ValueError("write what to change")
+        if not W.edit_ready(): raise ValueError("Qwen-Image 2.1 Turbo is not installed")
+        return "edit", {"model": W.EDIT_MODEL, "prompt": pr, "negative": str(b.get("negative") or ""), "images": ims, "count": max(1, min(4, int(b.get("count") or 1))),
+                        "seed": seed, "preset": preset}
+    if mode == "image":
+        model = b.get("model") or W.IMAGE_PRESET[preset]
+        if model not in W.image_models(): raise ValueError(f"image model not installed: {model}")
+        w, h = int(b.get("w") or 1344), int(b.get("h") or 768)
+        return "image", {"model": model, "prompt": b.get("picture", "").strip(), "negative": b.get("negative", ""), "w": w, "h": h,
+                         "count": max(1, min(4, int(b.get("count") or 1))), "seed": seed, "preset": preset}
+    if mode == "keyframes":
+        ims = b.get("images") or []
+        if not isinstance(ims, list) or not 2 <= len(ims) <= 12: raise ValueError("pick 2 to 12 images, in order")
+        for im in ims:
+            path = os.path.realpath(os.path.join(ROOT, str(im)))
+            if not path.startswith(ROOT + "/") or not os.path.isfile(path): raise ValueError(f"image not found: {im}")
+        g = b.get("gap") or 5
+        gaps = [max(3.0, min(15.0, float(x))) for x in (g if isinstance(g, list) else [g] * (len(ims) - 1))][:len(ims) - 1]
+        prompt = b.get("prompt") or W.compose_prompt(b.get("picture", ""), b.get("action", ""), b.get("sound", ""))
+        if not prompt.strip(): raise ValueError("describe the scene and what happens between the images")
+        return "keyframes", {"preset": preset, "prompt": prompt, "images": [str(x) for x in ims], "gaps": gaps, "seed": seed, "beats": b.get("beats", ""),
+                             "seconds": round(sum(gaps) - (len(gaps) - 1) / W.FPS, 2), "picture": b.get("picture", ""), "action": b.get("action", ""), "sound": b.get("sound", ""),
+                             "review": b.get("review") if b.get("review") in ("off", "note", "retake") else "retake",
+                             "voice": str(b.get("voice") or ""), "vo": str(b.get("vo") or "")[:3000], **eng(b), **scorep(b)}
+    prompt = b.get("prompt") or W.compose_prompt(b.get("picture", ""), b.get("action", ""), b.get("sound", ""))
+    if not prompt.strip(): raise ValueError("write what the picture shows")
+    sec = float(b.get("seconds") or 5)
+    p = {"preset": preset, "prompt": prompt, "seconds": sec, "seed": seed, "beats": b.get("beats", ""), "picture": b.get("picture", ""),
+         "action": b.get("action", ""), "sound": b.get("sound", ""), "review": b.get("review") if b.get("review") in ("off", "note", "retake") else "retake",
+         "voice": str(b.get("voice") or ""), "vo": str(b.get("vo") or "")[:3000], **eng(b), **scorep(b)}
+    ims = [str(x) for x in (b.get("cast_images") or [])][:3]
+    for im in ims:
+        path = os.path.realpath(os.path.join(ROOT, im))
+        if not path.startswith(ROOT + "/") or not os.path.isfile(path): raise ValueError(f"cast image not found: {im}")
+    cv = str(b.get("cast_voice") or "")
+    if cv and (not re.match(r"^[\w-]+$", cv) or not os.path.exists(f"{VOICES}/{cv}/ref.wav")): raise ValueError("that voice is not in the Voices tab")
+    if ims and b.get("cast_consent") is not True: raise ValueError("confirm you have the right to use this person's likeness")
+    if ims or cv:
+        if not W.cast_ready(): raise ValueError("the reference-to-video model is not installed")
+        p.update(cast_images=ims, cast_voice=cv, cast_lines=str(b.get("cast_lines") or "")[:1200], cast_consent=bool(ims))
+    fi = b.get("first_image")
+    if fi:
+        path = os.path.realpath(os.path.join(ROOT, fi))
+        if not path.startswith(ROOT + "/") or not os.path.isfile(path): raise ValueError("first image not found")
+        p["first_image_path"] = path
+    return ("chain" if sec > 15 else "video"), p
+
+
+class H(BaseHTTPRequestHandler):
+    server_version = "studio/1"
+    def log_message(self, *a): pass
+    def _send(self, code, body, ctype="application/json", extra=None):
+        b = body if isinstance(body, bytes) else (json.dumps(body) if ctype == "application/json" else body).encode()
+        self.send_response(code); self.send_header("Content-Type", ctype); self.send_header("Content-Length", str(len(b)))
+        self.send_header("Cache-Control", "no-store"); self.send_header("X-Content-Type-Options", "nosniff")
+        for k, v in (extra or {}).items(): self.send_header(k, v)
+        self.end_headers(); self.wfile.write(b)
+    def _file(self, path):
+        size = os.path.getsize(path); rng = self.headers.get("Range"); ctype = {".mp4": "video/mp4", ".png": "image/png", ".jpg": "image/jpeg",
+                                                                            ".webp": "image/webp", ".wav": "audio/wav"}.get(os.path.splitext(path)[1].lower(), "application/octet-stream")
+        start, end = 0, size - 1
+        if rng and rng.startswith("bytes="):
+            a, _, z = rng[6:].partition("-"); start = int(a or 0); end = int(z) if z else size - 1
+        end = min(end, size - 1); n = end - start + 1
+        self.send_response(206 if rng else 200); self.send_header("Content-Type", ctype); self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(n))
+        if rng: self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.end_headers()
+        with open(path, "rb") as f:
+            f.seek(start); left = n
+            while left > 0:
+                c = f.read(min(1 << 20, left))
+                if not c: break
+                self.wfile.write(c); left -= len(c)
+    def do_GET(self):
+        u = urlparse(self.path)
+        if u.path == "/": return self._send(200, open(f"{HERE}/index.html", "rb").read(), "text/html; charset=utf-8")
+        if u.path == "/api/state": return self._send(200, state())
+        if u.path == "/api/edit":
+            try: return self._send(200, edit_state(film_job((parse_qs(u.query).get("id") or [""])[0])))
+            except ValueError as e: return self._send(400, {"error": str(e)})
+        if u.path.startswith("/files/"):
+            path = os.path.realpath(os.path.join(ROOT, unquote(u.path[len("/files/"):])))
+            if not path.startswith(ROOT + "/") or not os.path.isfile(path): return self._send(404, {"error": "not found"})
+            return self._file(path)
+        self._send(404, {"error": "not found"})
+    def do_POST(self):
+        if self.headers.get("X-Studio") != "1": return self._send(403, {"error": "missing X-Studio header"})   # CSRF: forces a CORS preflight we never allow
+        u = urlparse(self.path); n = int(self.headers.get("Content-Length") or 0)
+        if u.path == "/api/midi/upload":
+            if n > 2 << 20: return self._send(413, {"error": "MIDI file too large (2 MB max)"})
+            data = self.rfile.read(n)
+            if not data.startswith(b"MThd"): return self._send(400, {"error": "that is not a standard MIDI file (.mid)"})
+            name = f"uploads/{uuid.uuid4().hex[:10]}.mid"; open(f"{ROOT}/{name}", "wb").write(data)
+            try: return self._send(200, {"file": name, **midi_worker("inspect", f"{ROOT}/{name}", t=60)})
+            except Exception as e: return self._send(400, {"error": str(e)[:300]})
+        if u.path == "/api/upload":
+            if n > 40 << 20: return self._send(413, {"error": "image too large (40 MB max)"})
+            ext = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}.get((self.headers.get("Content-Type") or "").split(";")[0])
+            if not ext: return self._send(400, {"error": "png, jpg or webp only"})
+            name = f"uploads/{uuid.uuid4().hex[:10]}{ext}"; open(f"{ROOT}/{name}", "wb").write(self.rfile.read(n))
+            return self._send(200, {"file": name})
+        try: b = json.loads(self.rfile.read(n) or b"{}") if n else {}
+        except ValueError: return self._send(400, {"error": "bad JSON"})
+        if u.path == "/api/jobs":
+            try: kind, p = mk_params(b)
+            except (ValueError, TypeError) as e: return self._send(400, {"error": str(e)})
+            return self._send(200, new_job(kind, p))
+        if u.path == "/api/cancel":
+            j = JOBS.get(b.get("id"))
+            if not j: return self._send(404, {"error": "no such job"})
+            if j["status"] in ("queued", "waiting_gpu"): j.update(status="cancelled", finished=now()); save()
+            else: j["cancel"] = True
+            return self._send(200, {"ok": True})
+        if u.path == "/api/delete":
+            j = JOBS.get(b.get("id"))
+            if not j or j["status"] in ("queued", "waiting_gpu", "running"): return self._send(409, {"error": "only finished renders can be deleted"})
+            shutil.rmtree(f"{LIB}/{j['id']}", ignore_errors=True)
+            with LOCK: JOBS.pop(j["id"], None)
+            save(); return self._send(200, {"ok": True})
+        if u.path == "/api/gpu/free":
+            if b.get("confirm") != "tf": return self._send(400, {"error": "confirm with {confirm: 'tf'}"})
+            return self._send(200, free_gpu())
+        if u.path == "/api/gpu/restore": return self._send(200, restore_tf())
+        if u.path == "/api/voices":
+            url = str(b.get("url") or "").strip()
+            if not re.match(r"^https://(www\.|m\.)?(youtube\.com/(shorts/|watch\?v=)|youtu\.be/)[\w-]{6,}", url): return self._send(400, {"error": "paste a YouTube Shorts (or YouTube video) link"})
+            if b.get("consent") is not True: return self._send(400, {"error": "confirm you have the right to use this person's voice"})
+            return self._send(200, new_job("voice", {"url": url, "who": str(b.get("who") or "")[:200], "label": str(b.get("label") or "")[:60]}))
+        if u.path == "/api/voices/delete":
+            vid = str(b.get("id") or "")
+            if not re.match(r"^[\w-]+$", vid) or not os.path.isdir(f"{VOICES}/{vid}"): return self._send(404, {"error": "no such voice"})
+            shutil.rmtree(f"{VOICES}/{vid}"); return self._send(200, {"ok": True})
+        if u.path in ("/api/edit/save", "/api/edit/rerender", "/api/edit/export"):
+            try:
+                fj = film_job(str(b.get("id") or ""))
+                if u.path == "/api/edit/save": return self._send(200, edit_save(fj, b))
+                if u.path == "/api/edit/rerender":
+                    k = int(b.get("seg") or 0)
+                    if k not in film_takes(fj["id"]): raise ValueError("no such segment")
+                    pr = str(b.get("prompt") or "").strip()[:4000] or seg_prompt(fj["params"], k - 1)
+                    fp = fj["params"]
+                    return self._send(200, new_job("retake", {"film": fj["id"], "seg": k, "prompt": pr, "seed": int(b.get("seed") or int.from_bytes(os.urandom(3), "big")),
+                                                              "preset": fp["preset"], "seconds": seg_seconds(fj, k - 1), "engine": fp.get("engine", "comfy"),
+                                                              "review": bool(b.get("review", True))}))
+                if not fj.get("edit"): edit_save(fj, b) if b.get("clips") else fj.setdefault("edit", edit_state(fj)["edit"])
+                return self._send(200, new_job("export", {"film": fj["id"], "preset": fj["params"].get("preset"), "seconds": fj["params"].get("seconds"),
+                                                          "prompt": "edit of " + fj["params"].get("prompt", "")[:150]}))
+            except (ValueError, TypeError, KeyError) as e: return self._send(400, {"error": str(e)})
+        if u.path == "/api/director/music":
+            try: return self._send(200, DIR.music_brief(str(b.get("idea") or "")[:1000], float(b.get("seconds") or 60), b.get("engine") if b.get("engine") in ("fast", "best") else "fast"))
+            except Exception as e: return self._send(500, {"error": str(e)[:300]})
+        if u.path == "/api/director/write":
+            idea = str(b.get("idea") or "").strip()
+            if not idea: return self._send(400, {"error": "write your idea in a sentence first"})
+            sec = float(b.get("seconds") or 5); mode = b.get("mode") or "video"
+            try: return self._send(200, DIR.write(idea, sec, len(plan_segments({"seconds": sec})) if sec > 15 else 1, mode, int(b.get("n_images") or 0)))
+            except Exception as e: return self._send(502, {"error": f"{type(e).__name__}: {str(e)[:300]}"})
+        self._send(404, {"error": "not found"})
+
+
+def main():
+    global JOBS
+    try: JOBS = json.load(open(JOBS_F))
+    except Exception: JOBS = {}
+    for j in JOBS.values():                                    # a restart mid-render: that render is lost, say so
+        if j["status"] == "running": j.update(status="failed", error="the studio restarted during this render")
+    save(); WS.start(); threading.Thread(target=worker, daemon=True).start()
+    srv = ThreadingHTTPServer((C.HOST, PORT), H); print(f"Lion AI Studios on http://{C.HOST}:{PORT}", flush=True); srv.serve_forever()
+
+
+if __name__ == "__main__":
+    main()

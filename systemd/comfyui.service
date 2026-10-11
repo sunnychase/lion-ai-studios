@@ -1,0 +1,14 @@
+# ComfyUI for Lion AI Studios. The studio starts it on demand (COMFY_SERVICE) and stops it when another GPU service needs the memory.
+[Unit]
+Description=ComfyUI (renderer for Lion AI Studios)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=@COMFY_DIR@
+ExecStart=@COMFY_PY@ main.py --listen 127.0.0.1 --port 8188
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

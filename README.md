@@ -47,7 +47,7 @@ All of these were made with this repo on one DGX Spark. Prompts and settings are
 | **Hardware** | NVIDIA **DGX Spark** (GB10 Grace Blackwell, **128 GB unified memory**, aarch64). Video uses ~55 GB while rendering; the director needs ~19 GB more. Other GB10 machines with 128 GB should work but are untested. |
 | **OS** | DGX OS / Ubuntu 24.04, NVIDIA driver 580+, CUDA 13.0 |
 | **Disk** | ~150 GB for the core models, ~350 GB for everything, plus room for your library. Use the internal NVMe: models must not run off network storage. |
-| **Software** | Python 3.12, `ffmpeg`, `git`, `curl`; Docker only for the TensorFold director recipe |
+| **Software** | Python 3.12, `ffmpeg` 6.x or newer (tested 6.1.1, the Ubuntu 24.04 / DGX OS package; 4.4 pads Faithful shots short), `git`, `curl`; Docker only for the TensorFold director recipe |
 | **Renderer** | ComfyUI pinned to commit `b26625f2` (v0.39.0 + 18), PyTorch 2.10 + cu130 |
 
 ## Install

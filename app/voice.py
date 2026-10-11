@@ -19,19 +19,35 @@ def sh(cmd, t=900):
     return r.stdout
 
 
-def separate(src, out):
+def separate(src, out, music_out=None):
     """htdemucs through its Python API, reading and writing with soundfile (torchaudio 2.10's own save needs torchcodec, which is not
     built for this aarch64 box)"""
     import numpy as np, soundfile as sf, torch
     from demucs.apply import apply_model
     from demucs.pretrained import get_model
-    model = get_model("htdemucs"); model.eval().cuda()
+    model = get_model("htdemucs"); model.eval()
     wav, sr = sf.read(src, dtype="float32", always_2d=True)                 # (samples, channels) at 44.1 kHz = the model's rate
     if sr != model.samplerate: raise RuntimeError(f"expected {model.samplerate} Hz audio, got {sr}")
     x = torch.from_numpy(wav.T.copy()); ref = x.mean(0); x = (x - ref.mean()) / (ref.std() + 1e-8)
-    with torch.no_grad(): stems = apply_model(model, x[None].cuda(), shifts=1, split=True, overlap=0.25, progress=False)[0]
-    voc = stems[model.sources.index("vocals")].cpu() * (ref.std() + 1e-8) + ref.mean()
+    def run(dev):
+        with torch.no_grad(): return apply_model(model.to(dev), x[None].to(dev), shifts=1, split=True, overlap=0.25, progress=False)[0]
+    try: stems = run("cuda")
+    except Exception as e:  # short of GPU memory -> the CPU (slower, same result)
+        if "out of memory" not in str(e).lower(): raise
+        torch.cuda.empty_cache(); stems = run("cpu")
+    vi = model.sources.index("vocals"); voc = stems[vi].cpu() * (ref.std() + 1e-8) + ref.mean()
     sf.write(out, voc.numpy().T.astype(np.float32), sr)
+    if music_out:  # everything but the voice
+        mus = (stems.sum(0) - stems[vi]).cpu() * (ref.std() + 1e-8) + ref.mean()
+        sf.write(music_out, mus.numpy().T.astype(np.float32), sr)
+
+
+def stems(src, d):
+    """any audio/video -> d/vocals.wav (speech and singing) + d/music.wav (drums + bass + other), 44.1 kHz stereo"""
+    os.makedirs(d, exist_ok=True)
+    sh(["ffmpeg", "-v", "error", "-y", "-i", src, "-vn", "-ac", "2", "-ar", "44100", f"{d}/mix.wav"])
+    separate(f"{d}/mix.wav", f"{d}/vocals.wav", f"{d}/music.wav"); os.remove(f"{d}/mix.wav")
+    print(json.dumps({"ok": True, "vocals": f"{d}/vocals.wav", "music": f"{d}/music.wav"}))
 
 
 def capture(url, d):
@@ -96,6 +112,7 @@ if __name__ == "__main__":
         if c == "capture": capture(sys.argv[2], sys.argv[3])
         elif c == "cut": cut(sys.argv[2], sys.argv[3], sys.argv[4])
         elif c == "say": say(sys.argv[2], sys.argv[3], sys.argv[4])
+        elif c == "stems": stems(sys.argv[2], sys.argv[3])
         else: raise RuntimeError(__doc__)
     except Exception as e:
         print(json.dumps({"ok": False, "error": f"{type(e).__name__}: {str(e)[:500]}"})); sys.exit(1)

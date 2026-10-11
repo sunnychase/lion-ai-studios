@@ -16,7 +16,7 @@ Video with sound · images · music · voices · a director that writes and revi
 | **Director** | A vision-language model (Qwen3.8-27B) turns one sentence into a shot prompt with one beat per segment, **watches every rendered segment**, scores it, and re-takes a weak one once. |
 | **Voices** | Clone a voice from a short clip (Qwen3-TTS) for narration or on-camera lines. |
 | **Cast** | Put the person from up to 3 reference photos into the video (H3 reference-to-video, the official recipe). Consent checkbox required. |
-| **Recreate a Short** | Paste a YouTube Short. The director watches it shot by shot and re-shoots it with your cast, keeping the timing and, optionally, the spoken words. |
+| **Recreate a Short** | Paste a YouTube Short. The director watches it shot by shot and re-shoots it with your cast, keeping the timing, the scene's makeup and costume, and optionally the spoken words. **Soundtrack:** new sound made with the picture, the original music under your cast's voices, or the original audio exactly. With the original sound, every shot is cut to the original's length so the cuts land on the beat. |
 | **Editor** | Re-take any segment, re-score the film, and export with crossfaded seams. |
 | **Library / Queue** | Everything you make, filterable. Renders keep going if you close the page. |
 

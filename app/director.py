@@ -185,8 +185,10 @@ def describe_shot(clip_path, words, notes="", has_cast=True):
     finally:
         try: os.remove(tmp)
         except OSError: pass
-    who = ("Write the main person as \"the person from the reference image\". Do NOT describe their face, hair, skin, age or ethnicity — the "
-           "reference image gives their look; you may keep their clothing style, pose and expression.") if has_cast else "Describe any people neutrally."
+    who = ("Write the main person as \"the person from the reference image\". Do NOT describe their natural face, hair, skin colour, age or "
+           "ethnicity — the reference image gives their identity. DO describe the scene's look as applied to the person from the reference image: "
+           "any makeup, face paint, special-effects or monster/zombie makeup, skin tint from makeup, prosthetics, wounds, masks, unusual eye colour "
+           "or contact lenses, styled or messy hair, and their costume, pose and facial expression.") if has_cast else "Describe any people neutrally."
     said = f'In this shot someone says: "{words}". Do not repeat the words; they are added separately.' if words else "Nobody speaks in this shot."
     change = f"Changes the user wants in the remake: {notes}" if notes.strip() else "Keep everything as close to the original as you can."
     msg = [{"role": "user", "content": [{"type": "video_url", "video_url": {"url": "data:video/mp4;base64," + v}},
@@ -202,7 +204,8 @@ def describe_shot(clip_path, words, notes="", has_cast=True):
         try:
             d2 = _ask(DIRECTOR, C.DIRECTOR_MODEL, msg + [{"role": "assistant", "content": json.dumps({k: d[k] for k in ("picture", "action", "sound")})},
                       {"role": "user", "content": 'Rewrite it: call the main person only "the person from the reference image", and do not describe their '
-                                                  "face, hair, skin, age or ethnicity. Same JSON keys."}], max_tokens=500, temperature=0.3)
+                                                  "natural face, hair, skin colour, age or ethnicity (keep any makeup, face paint, costume and expression). "
+                                                  "Same JSON keys."}], max_tokens=500, temperature=0.3)
             if named(d2): d.update({k: str(d2.get(k) or d[k]).strip() for k in ("picture", "action", "sound")})
         except Exception: pass
         if not named(d): d["picture"] = "The person from the reference image is the main person in this shot. " + d["picture"]

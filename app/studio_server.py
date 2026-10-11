@@ -319,17 +319,60 @@ def run_recreate(job):
             out = f"{d}/seg{k + 1:02d}.retake.mp4"; shutil.move(fs[0], out); return out
         seg = directed(job, k, seg, prompt, rerender); done.append(seg)
         job["outputs"] = [{"file": os.path.basename(x), "kind": "segment"} for x in done]; save()
-    if len(done) > 1:
-        job["progress"]["phase"] = "cutting the shots together"; save()
-        rc, log = stitch.join_keyframes(done, f"{d}/film.mp4")
-        if rc: raise RuntimeError("join failed: " + log)
-        main = f"{d}/film.mp4"
+    if p.get("soundtrack", "new") != "new":
+        main = original_sound(job, plan, done, src_dir, d)
     else:
-        main = done[0]
-    main = add_score(job, main)
+        if len(done) > 1:
+            job["progress"]["phase"] = "cutting the shots together"; save()
+            rc, log = stitch.join_keyframes(done, f"{d}/film.mp4")
+            if rc: raise RuntimeError("join failed: " + log)
+            main = f"{d}/film.mp4"
+        else:
+            main = done[0]
+        main = add_score(job, main)
     stitch.poster(main, f"{d}/poster.jpg", at=min(1.5, max(0.2, stitch.probe(main)["dur"] / 3)))
     job["outputs"].insert(0, {"file": os.path.basename(main), "kind": "film" if len(done) > 1 else "video", "poster": "poster.jpg"})
     job["outputs"].append({"file": "source/source.mp4", "kind": "original Short"})
+
+
+def original_sound(job, plan, done, src_dir, d):
+    """the remake on the Short's own sound. Every shot is cut to its original length (hard cuts on the original's cut
+    points, so picture and music stay in step); 'original' lays the Short's audio under it as it was, 'music' lays the Short's music
+    (Demucs: speech and singing removed) under the remake's own voices (Demucs: H3's music and effects removed).
+    -> film.mp4; the same cut with the remake's own sound is kept as film_newsound.mp4"""
+    p = job["params"]; mode = p["soundtrack"]; src = f"{src_dir}/source.mp4"; n = len(done)
+    job["progress"].update(phase="cutting the shots to the original's timing"); save()
+    lens = [min(sh["end"] - sh["start"], stitch.probe(seg)["dur"]) for seg, sh in zip(done, plan)]
+    ins, parts = [], []
+    for i, seg in enumerate(done):
+        ins += ["-i", seg]
+        parts.append(f"[{i}:v]trim=0:{lens[i]:.4f},setpts=PTS-STARTPTS[v{i}];[{i}:a]atrim=0:{lens[i]:.4f},asetpts=PTS-STARTPTS,"
+                     f"afade=t=in:d=0.01,afade=t=out:st={max(0, lens[i] - 0.01):.4f}:d=0.01[a{i}]")
+        parts.append(f"[{n}:a]atrim={plan[i]['start']:.4f}:{plan[i]['start'] + lens[i]:.4f},asetpts=PTS-STARTPTS[o{i}]")
+    graph = ";".join(parts + ["".join(f"[v{i}][a{i}]" for i in range(n)) + f"concat=n={n}:v=1:a=1[v][a]",
+                              "".join(f"[o{i}]" for i in range(n)) + f"concat=n={n}:v=0:a=1[o]"])
+    cut, orig = f"{d}/film_newsound.mp4", f"{d}/original_sound.wav"
+    r = subprocess.run(["ffmpeg", "-v", "error", "-y", *ins, "-i", src, "-filter_complex", graph, "-map", "[v]", "-map", "[a]", "-c:v", "libx264",
+                        "-preset", "slow", "-crf", "14", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "256k", "-movflags", "+faststart", cut,
+                        "-map", "[o]", "-ac", "2", "-ar", "44100", orig], capture_output=True, text=True)
+    if r.returncode: raise RuntimeError("cutting to the original's timing failed: " + (r.stderr or "")[-300:])
+    out = f"{d}/film.mp4"
+    if mode == "original":
+        graph, extra = "[1:a]apad[a]", ["-i", orig]
+    else:
+        job["progress"].update(phase="separating the original's music from its voices, and the remake's voices from its music"); save()
+        try:                                                                    # the renders are done: ComfyUI gives its memory back for Demucs
+            urllib.request.urlopen(urllib.request.Request(f"{COMFY}/free", data=json.dumps({"unload_models": True, "free_memory": True}).encode(),
+                                                          headers={"Content-Type": "application/json"}), timeout=60).read(); time.sleep(3)
+        except Exception: pass
+        vworker("stems", orig, f"{d}/stems_original", t=900); vworker("stems", cut, f"{d}/stems_remake", t=900)
+        extra = ["-i", f"{d}/stems_original/music.wav", "-i", f"{d}/stems_remake/vocals.wav"]
+        graph = "[1:a]volume=0.9[m];[2:a]volume=1.0[s];[m][s]amix=inputs=2:duration=first:normalize=0,apad[a]"
+    r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", cut, *extra, "-filter_complex", graph, "-map", "0:v", "-map", "[a]", "-c:v", "copy",
+                        "-c:a", "aac", "-b:a", "256k", "-shortest", "-movflags", "+faststart", out], capture_output=True, text=True)
+    if r.returncode: raise RuntimeError("laying the original sound failed: " + (r.stderr or "")[-300:])
+    job["outputs"].insert(0, {"file": "film_newsound.mp4", "kind": "with the remake's own sound"})
+    return out
     for f in os.listdir(COMFY_IN):
         if f.startswith(f"studio_{job['id']}_"): os.remove(os.path.join(COMFY_IN, f))
 
@@ -852,7 +895,15 @@ def recreate_params(b, preset):
     return {"url": url, "preset": preset if preset in ("draft", "fasthd") else "draft", "max_seconds": max(5.0, min(60.0, float(b.get("max_seconds") or 30))),
             "notes": str(b.get("notes") or "")[:600], "keep_words": bool(b.get("keep_words", True)), "seed": int(b.get("seed") or int.from_bytes(os.urandom(3), "big")),
             "review": b.get("review") if b.get("review") in ("off", "note", "retake") else "retake", "cast_images": ims, "cast_voice": cv, "cast_consent": True,
-            "prompt": "Remake of a Short", "seconds": float(b.get("max_seconds") or 30), "vae8": bool(b.get("vae8", True)) and W.vae8_ready(), **scorep(b)}
+            "prompt": "Remake of a Short", "seconds": float(b.get("max_seconds") or 30), "vae8": bool(b.get("vae8", True)) and W.vae8_ready(), **scorep(b),
+            **soundp(b)}
+
+
+def soundp(b):
+    """new = H3 makes the sound · music = the Short's music under the remake's voices · original = the Short's audio.
+    With the Short's sound there is no extra score (it would fight the original music)."""
+    t = b.get("soundtrack") if b.get("soundtrack") in ("new", "music", "original") else "new"
+    return {"soundtrack": t, **({"music": ""} if t != "new" else {})}
 
 
 def mk_params(b):

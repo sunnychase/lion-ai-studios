@@ -15,5 +15,6 @@ easy to misuse. The studio builds in a few guard rails; the rest is on whoever r
   something they did not, without their explicit consent.
 - Respect copyright and platform terms. Downloading or remaking someone else's video, music or voice may need the
   rights holder's permission. *Recreate a Short* is meant for your own videos and content you have rights to.
+  Its *original music* and *original audio* soundtrack options reuse the Short's own recording, so publishing the result may need a licence for that music.
 - Label AI-generated media where people could mistake it for real footage.
 - Follow each model's licence and acceptable-use policy (see [MODELS.md](MODELS.md)).

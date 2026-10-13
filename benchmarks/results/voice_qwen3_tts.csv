@@ -1,0 +1,8 @@
+date,order,stage,what,wall_s,audio_s,x_realtime,used_before_gib,peak_used_gib,mem_available_min_gib,gpu_temp_max_c,output,note
+2026-10-12,1,prep,Demucs + Whisper on the 5.2 s synthetic clip (the studio's capture steps after the download),32.2,,,36.8,46.7,75.0,54,,"demucs 1.2 s, whisper 28.9 s (incl. its load); transcript: I grew up by the sea, and every morning I walked along the harbor wall before school."
+2026-10-12,2,cut,voice.cut: reference WAV + its words,0.3,,,41.5,41.5,80.2,49,,
+2026-10-12,3,preview,"voice.py say: preview line, own process, model load included",34.6,5.6,0.16,41.6,49.2,72.5,50,preview.wav,
+2026-10-12,4,narration,"voice.py say: 126-word script, own process, model load included",56.0,33.12,0.59,41.6,49.9,71.8,58,narration.wav,
+2026-10-12,5,load,Qwen3-TTS model load (in-process),24.0,,,,,,,,
+2026-10-12,6,gen1,"126-word script, model already loaded",26.8,34.48,1.29,46.7,47.9,73.8,61,narration_gen1.wav,
+2026-10-12,7,gen2,"same script again, model already loaded",26.1,34.24,1.31,47.9,49.1,72.6,61,narration_gen2.wav,

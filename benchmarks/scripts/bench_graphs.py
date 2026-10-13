@@ -138,3 +138,58 @@ def image_graph(model, prompt, w, h, count, seed, prefix, negative=""):
                                                    "height": int(h), "batch_size": int(count), "seed": int(seed), "steps": 0}},
         "2": {"class_type": "SaveImage", "inputs": {"images": ["1", 0], "filename_prefix": prefix}},
     }
+
+
+# ── added 2026-10-12 for bench_cast.py and bench_image_edit.py: copies of app/workflows.py's cast_graph and edit_graph ──────────────────
+REF2VA = {"unet": "minimax_h3_ref2va_pruned_int8_convrot.safetensors", "turbo4": "minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors",
+          "gate": "fasth3_vsa_gate.safetensors"}
+CAST_STEPS = 20
+TURBO_SIGMAS = "1.0, 0.978453, 0.95418, 0.926626, 0.89508, 0.845148, 0.704534, 0.414568, 0.0"   # Qwen/Qwen-Image-2.1-Turbo model_index.json sample_sigmas
+
+
+def cast_graph(preset, prompt, sec, seed, prefix, images, audio=None, vae8=False, dims=None):
+    """images: up to 3 file names in ComfyUI's input dir (faces/characters); audio: a voice clip there (or None)"""
+    p = VIDEO[preset]; W_, H_ = dims or (p["w"], p["h"])
+    g = {
+        "1": {"class_type": "UNETLoader", "inputs": {"unet_name": REF2VA["unet"], "weight_dtype": "default"}},
+        "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": H3_CLIP, "type": "minimax"}},
+        "3": {"class_type": "VAELoader", "inputs": {"vae_name": H3_VAE}},
+        "4": {"class_type": "VAELoader", "inputs": {"vae_name": H3_AVAE}},
+        "5": {"class_type": "MiniMaxH3ReferenceToVideo", "inputs": {"clip": ["2", 0], "vae": ["3", 0], "audio_vae": ["4", 0], "prompt": prompt, "width": W_, "height": H_,
+                                                                    "length": frames(sec), "ref_image_size": "match"}},
+        # MiniMax H3's own recipe (template video_minimax_h3_r2v.json) — no Turbo LoRA, no VSA gate patch, no shift
+        "10": {"class_type": "RandomNoise", "inputs": {"noise_seed": int(seed)}},
+        "11": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "res_multistep"}},
+        "12": {"class_type": "BasicScheduler", "inputs": {"model": ["1", 0], "scheduler": "simple", "steps": CAST_STEPS, "denoise": 1.0}},
+        "13": {"class_type": "BasicGuider", "inputs": {"model": ["1", 0], "conditioning": ["5", 0]}},
+        "14": {"class_type": "SamplerCustomAdvanced", "inputs": {"noise": ["10", 0], "guider": ["13", 0], "sampler": ["11", 0], "sigmas": ["12", 0], "latent_image": ["5", 1]}},
+        "15": {"class_type": "VAEDecode", "inputs": {"samples": ["14", 0], "vae": ["19", 0] if vae8 and vae8_ready() else ["3", 0]}},
+        "16": {"class_type": "VAEDecodeAudio", "inputs": {"samples": ["14", 0], "vae": ["4", 0]}},
+        "17": {"class_type": "CreateVideo", "inputs": {"images": ["15", 0], "audio": ["16", 0], "fps": float(FPS)}},
+        "18": {"class_type": "SaveVideo", "inputs": {"video": ["17", 0], "filename_prefix": prefix, "format": "mp4", "format.codec": "h264",
+                                                     "format.codec.encoding": "re-encode", "format.codec.encoding.crf": 14.0}},
+    }
+    for i, im in enumerate(images[:3]):
+        g[f"3{i}"] = {"class_type": "LoadImage", "inputs": {"image": im}}; g["5"]["inputs"][f"ref_images.ref_image_{i}"] = [f"3{i}", 0]
+    if audio:
+        g["40"] = {"class_type": "LoadAudio", "inputs": {"audio": audio}}; g["5"]["inputs"]["ref_audios.ref_audio_0"] = ["40", 0]
+    if vae8 and vae8_ready(): g["19"] = {"class_type": "VAELoader", "inputs": {"vae_name": H3_VAE_Q8}}
+    return g, {"w": W_, "h": H_, "steps": CAST_STEPS, "frames": frames(sec), "engine": "MiniMax H3 ref2va" + (" + voice" if audio else ""), "vae": "8-bit" if vae8 and vae8_ready() else "fp16"}
+
+
+def edit_graph(images, prompt, seed, prefix, negative=""):
+    """images: 1-4 file names in ComfyUI's input dir; the output takes the first reference's size (rounded to /32)"""
+    g = {"1": {"class_type": "UNETLoader", "inputs": {"unet_name": "qwen_image_2.1_turbo_bf16.safetensors", "weight_dtype": "default"}},
+         "2": {"class_type": "QwenImage21Cache", "inputs": {"model": ["1", 0], "device": "auto", "dtype": "default"}},
+         "3": {"class_type": "CLIPLoader", "inputs": {"clip_name": "qwen3vl_8b_int8_convrot.safetensors", "type": "qwen_image", "device": "default"}},
+         "4": {"class_type": "VAELoader", "inputs": {"vae_name": "qwen_image_2.1_vae_bf16.safetensors"}},
+         "5": {"class_type": "TextEncodeQwenImage21", "inputs": {"clip": ["3", 0], "vae": ["4", 0], "prompt": prompt, "negative_prompt": negative, "resolution": 0}},
+         "6": {"class_type": "ManualSigmas", "inputs": {"sigmas": TURBO_SIGMAS}},
+         "7": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "euler"}},
+         "8": {"class_type": "SamplerCustom", "inputs": {"model": ["2", 0], "add_noise": True, "noise_seed": int(seed), "cfg": 1.0, "positive": ["5", 0],
+                                                          "negative": ["5", 1], "sampler": ["7", 0], "sigmas": ["6", 0], "latent_image": ["5", 2]}},
+         "9": {"class_type": "VAEDecode", "inputs": {"samples": ["8", 0], "vae": ["4", 0]}},
+         "10": {"class_type": "SaveImage", "inputs": {"images": ["9", 0], "filename_prefix": prefix}}}
+    for i, im in enumerate(images[:4]):
+        g[f"2{i}"] = {"class_type": "LoadImage", "inputs": {"image": im}}; g["5"]["inputs"][f"images.image_{i + 1}"] = [f"2{i}", 0]
+    return g

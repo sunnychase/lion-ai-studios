@@ -2,6 +2,24 @@
 
 Updates to Lion AI Studios, newest first. The project has no version numbers; each entry is dated.
 
+## 2026-10-12 — Benchmarks: every image model, image edit, Ming, voices, Cast
+
+New measurements on one DGX Spark, in [docs/BENCHMARKS.md](docs/BENCHMARKS.md) sections 10–14, with raw rows in `benchmarks/results/` and the scripts in
+`benchmarks/scripts/`. Most cells are n = 1 or n = 2, so they are not error bars.
+- **Every image model** the studio offers, at its own settings, 1344x768: one cold and two warm runs each. Warm: FLUX.2 klein 4 s, Z-Image Turbo and Juggernaut Z 8 s,
+  Qwen-Image 2.1 Turbo 10 s (44 s at 2752x1536), Krea 2 16 s, Qwen-Image 2.1 18–20 s, HiDream-O1 26–28 s, Chroma1-HD 56–58 s. Juggernaut Z's pictures came
+  out visibly broken at its settings.
+- **Image edit** with 1, 2 and 4 references: 26 s cold for 1 (as the studio job), 16 / 24 / 40 s warm.
+- **Ming-Image 0.1 Design** at 1024x1024: about 5.5 min per job, almost all of it loading the model; each further image +22 s. The director's optional
+  layout step: 14 s.
+- **Voices** (Qwen3-TTS) from a synthetic 5 s clip: cloning 67 s; a ~33 s narration 56 s in its own process (0.59x realtime), 1.3x realtime with the
+  model already loaded.
+- **Cast** (reference to video, official recipe), 5 s: Draft 480p 328 s; Fast HD 979 s, the same as the studio job.
+- Not measured: Recreate a Short and the narrator clone from a YouTube Short. They need a source video the project may use.
+- `benchlib.py` now records peak memory in use and GPU temperature once a second, ComfyUI's own execution time (`exec_s`, not rounded by polling), and waits
+  while the studio has a job queued. `bench_graphs.py` gains copies of the studio's Cast and edit graphs.
+- README: the TensorFold column for Standard and High now says why it is empty (the dense path was tested at 5–8 % faster and not shipped).
+
 ## 2026-10-12 — Ming-Image 0.1 Design, image downloads, narrator cloning, Fast images
 
 **Images: optional Fast engine (LocalRouter)**

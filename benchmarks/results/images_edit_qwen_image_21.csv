@@ -1,0 +1,8 @@
+date,order,set,run,refs,seed,width,height,wall_s,exec_s,used_before_gib,peak_used_gib,mem_available_min_gib,gpu_temp_max_c,output,note
+2026-10-12,1,main,e1_cold,1,77,1344,768,26.0,24.78,25.5,51.6,70.1,77,e1_cold.png,first edit after the image models: includes loading the edit model
+2026-10-12,2,main,e1_warm,1,78,1344,768,12.0,10.13,48.4,51.6,70.1,78,e1_warm.png,"same references and prompt as e1_cold, new seed: ComfyUI reused the encoded prompt + references, so this is a second variation of the same edit, not a fresh edit"
+2026-10-12,3,main,e2,2,77,1344,768,24.0,22.57,48.6,54.1,67.6,81,e2.png,warm; the picture came out almost the same as e1_cold (same seed 77): the edit barely took
+2026-10-12,4,main,e4,4,77,1344,768,40.0,38.75,48.6,60.0,61.6,82,e4.png,warm; same as e2: almost the same picture as e1_cold
+2026-10-12,5,control (reverse order after unloading),c_e4,4,77,1344,768,44.0,43.59,13.2,46.3,75.4,80,c_e4.png,control run after unloading every model (cold): includes loading the edit model
+2026-10-12,6,control (reverse order after unloading),c_e2,2,77,1344,768,24.0,22.19,36.5,42.1,79.6,81,c_e2.png,"control, warm"
+2026-10-12,7,control (reverse order after unloading),c_e1,1,77,1344,768,16.0,14.67,36.4,39.3,82.4,81,c_e1.png,"control, warm; prompt and references encoded afresh. The three control pictures match e4 / e2 / e1_cold (same seed), so the run order and earlier runs did not change the output"

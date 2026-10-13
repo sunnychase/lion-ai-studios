@@ -1,6 +1,6 @@
 # Benchmarks
 
-Measured 2026-10-09 and 2026-10-10 on one machine while the studio was being built. Every number in the tables comes from a row
+Measured 2026-10-09 and 2026-10-10 on one machine while the studio was being built. Sections 10–14 were added on 2026-10-12 on the same machine. Every number in the tables comes from a row
 in [`benchmarks/results/`](../benchmarks/results/) and can be checked there. Numbers that were noted during the build but whose raw output was
 not kept are listed separately under [Reported but not backed by a kept results file](#reported-but-not-backed-by-a-kept-results-file).
 
@@ -26,7 +26,7 @@ not kept are listed separately under [Reported but not backed by a kept results 
 | OS / driver | Ubuntu 24.04, NVIDIA driver 580, CUDA 13.0 |
 | Renderer | ComfyUI v0.39.0 (+18, commit `b26625f2`), PyTorch 2.10+cu130, ComfyUI's native MiniMax H3 / ACE-Step / MiniMax Music 3 / Qwen-Image nodes |
 | TensorFold engine | `libtf_h3.so` built from drowzeys/TensorFold `h3-cuda` @ `16cecde2` (Zig 0.17, CUDA 13.0) + ComfyUI node `TensorFoldH3Blocks` from drowzeys/keys-TensorFold-Studio-Mac-DGXSpark-64GB-VRam-Min @ `d99d089` |
-| Other load | During the 2026-10-09 TensorFold runs the director model (~19 GiB) was loaded but idle. Apart from the baseline in section 1, the scripts wait for an empty ComfyUI queue before each run. Background load beyond that was not recorded. |
+| Other load | During the 2026-10-09 TensorFold runs the director model (~19 GiB) was loaded but idle. Apart from the baseline in section 1, the scripts wait for an empty ComfyUI queue before each run. Background load beyond that was not recorded. On 2026-10-12 (sections 10–14) a language-model server that normally shares the machine was stopped first, and the director ran only during section 12. |
 
 Video presets as the studio ships them (5 s = 124 frames at 24 fps, with sound):
 
@@ -168,8 +168,8 @@ The two rows use **different prompts**, so they are not a matched pair.
 | Qwen-Image 2.1 | int8 | 25, euler / simple, CFG 1 | 1344x768 | 24.0 s | 24.0 s |
 
 Runs went in table order for each prompt, so the base model's runs include switching models. The 16.1 s and 16.0 s Turbo runs (first and fourth in the
-sequence) suggest that switching costs little, but load time was not measured separately. No timings were kept for the studio's other image models
-(Z-Image Turbo, Krea 2, FLUX.2 klein and others).
+sequence) suggest that switching costs little, but load time was not measured separately. The studio's other image models (Z-Image Turbo, Krea 2, FLUX.2 klein and others),
+with cold and warm runs, are in [section 10](#10-all-image-models-2026-10-12).
 
 ## 7. Music
 
@@ -212,6 +212,145 @@ official recipe: about 4.3x the time of the 4-step run, for a better picture. Wh
 No results file was kept for this one. The method is in `benchmarks/scripts/seam_check.py`, and the numbers noted at the time are in the reported section.
 The script reads the studio library and renders nothing, so you can run it on your own films.
 
+## 10. All image models (2026-10-12)
+
+`images_all_models.csv`: 2026-10-12, every image model the studio offered on the test machine, at the studio's own settings for that model (the image node's
+default steps, sampler and CFG), one image per run, the two prompts from section 6. Made by `bench_images_all.py` straight on ComfyUI with the studio's image
+graph, so nothing went into the studio's library. Ming-Image runs outside ComfyUI and has its own section (12). Qwen-Image 2512 is in the studio's list
+but was not installed, so it was not measured.
+
+Per model, back to back: **cold** = poster, seed 77, the first run after switching from the previous model; **warm 1** = portrait, seed 77; **warm 2** =
+poster, **seed 78**. Warm 2 uses a new seed because ComfyUI keeps earlier results and would hand back an identical graph from its cache without rendering it.
+Every row was checked: ComfyUI rendered the image node each time and served nothing from its cache.
+
+| Model | Steps / sampling | Cold | Warm 1 | Warm 2 | Warm, ComfyUI's own time | Peak memory in use, warm | Max GPU temp |
+|---|---|---:|---:|---:|---:|---:|---:|
+| Z-Image-Turbo | 8, euler / simple, CFG 1 | 12.0 s | 8.0 s | 8.0 s | 7.39 / 7.34 s | 32.0 GiB | 62 °C |
+| Krea 2 Turbo + realism LoRA | 8, euler / simple, CFG 1 | 34.0 s | 16.0 s | 16.0 s | 15.42 / 15.46 s | 40.0 GiB | 71 °C |
+| Krea 2 Turbo | 8, euler / simple, CFG 1 | 20.0 s ¹ | 16.0 s | 16.0 s | 15.43 / 15.54 s | 39.6 GiB | 75 °C |
+| Qwen-Image 2.1 Turbo | 8, the checkpoint's own sigmas, euler, CFG 1 | 20.0 s | **10.0 s** | **10.0 s** | 8.96 / 8.98 s | 34.0 GiB | 75 °C |
+| Qwen-Image 2.1 | 25, euler / simple, CFG 1 | 24.0 s | 18.1 s | 20.0 s | 17.90 / 18.18 s | 27.6 GiB | 78 °C |
+| Chroma1-HD | 26, euler / beta, CFG 4 | 70.1 s | 56.1 s | 58.1 s | 55.91 / 56.74 s | 34.9 GiB | 82 °C |
+| HiDream-O1 | 40, dpmpp_2m_sde_gpu / normal, CFG 5 | 32.0 s | 28.0 s | 26.1 s | 26.05 / 25.97 s | 18.7 GiB | 76 °C |
+| Juggernaut Z ² | 8, euler / simple, CFG 1 | 18.0 s | 8.2 s | 8.0 s | 7.41 / 7.43 s | 32.3 GiB | 79 °C |
+| FLUX.2 klein | 4, euler / Flux2Scheduler, CFG 1 | 12.0 s | **4.0 s** | **4.0 s** | 3.67 / 3.68 s | 26.1 GiB | 77 °C |
+
+**Qwen-Image 2.1 Turbo at 2752x1536** (the studio offers its 2K sizes for this model only), warm, seed 77: poster **44.0 s**, portrait **44.1 s**
+(ComfyUI's own time 42.37 / 42.30 s), peak 38.4 GiB in use, 79 °C. Same as section 6 (44.0 s).
+
+¹ Krea 2 Turbo ran right after Krea 2 Turbo + realism LoRA. They share the model file, so its "cold" load came from a file that had just been read.
+² Juggernaut Z's three pictures came out visibly broken at these settings (garbled lettering and texture). The times are real, but the output was not usable.
+
+How to read this:
+- **n = 1 cold and n = 2 warm per model.** Two warm runs are not error bars. They agreed within 2 s here, but that says little about spread on another day.
+- **Wall times are rounded up by polling** (every 2 s), which is why so many are whole even numbers. *ComfyUI's own time* comes from the start and end
+  timestamps ComfyUI records for each prompt (read from its history), so it is not rounded. It is the better figure for the short runs.
+- **"Cold" means the model was not in ComfyUI's memory.** Its files may still have been in the operating system's file cache from earlier use, so a load
+  straight from disk can take longer. Loading is the gap between the cold and warm columns: about 4 s for Z-Image Turbo, 18 s for Krea 2 with the LoRA, and 10 s
+  for Qwen-Image 2.1 Turbo.
+- **Peak memory in use** is the whole machine's (total minus available unified memory, sampled every second), not the model's alone. About 8 GiB was in
+  use with nothing loaded, and ComfyUI may keep a text encoder or decoder from an earlier model. The column uses the warm runs. A cold run's peak still holds
+  the previous model, which the node frees as it loads the new one. The 1 s sampling can miss a short spike.
+- **Qwen-Image 2.1 Turbo is faster than in section 6** (10.0 s warm at 1344x768 against 16.0–16.1 s on 2026-10-10). The 10-10 runs were not split into cold
+  and warm, so their numbers can include loading. The reason for the gap was not established. Use the newer numbers.
+- During this session the machine had nothing else loaded. A language-model server that normally runs there was stopped for the session, and the
+  director was off except during the section 12 runs.
+
+## 11. Image edit: 1, 2 and 4 references
+
+`images_edit_qwen_image_21.csv`: 2026-10-12. The studio's edit graph (Qwen-Image 2.1 Turbo, bf16, 8 steps on its own sigmas, CFG 1), made by `bench_image_edit.py`.
+The references are four synthetic pictures from section 10 (two Qwen-Image portraits/posters, a Z-Image portrait, a FLUX.2 klein poster). The output takes the
+first reference's size, 1344x768, in every run. Main set: the runs in order, right after section 10. Control: every model unloaded, then the three seed-77
+edits again in reverse order.
+
+| References | Main set | Control set | Peak memory in use |
+|---|---|---|---:|
+| 1 | **26.0 s** cold (24.78 s), includes loading the edit model | 16.0 s warm (14.67 s) | 39–52 GiB |
+| 1, second variation (seed 78) | 12.0 s (10.13 s) ³ | — | 52 GiB |
+| 2 | **24.0 s** warm (22.57 s) | 24.0 s warm (22.19 s) | 42–54 GiB |
+| 4 | **40.0 s** warm (38.75 s) | 44.0 s cold (43.59 s), includes loading the edit model | 46–60 GiB |
+
+Wall time first, ComfyUI's own time in brackets. n = 1 or 2 per cell.
+
+- The 1-reference cold run, **26.0 s**, matches the studio job in section 5 (26 s). Warm, a 1-reference edit takes 15–16 s.
+- Each extra reference adds time, because the edit model encodes every reference image (with its vision encoder and its VAE) before it samples: about 15–16 s warm
+  for 1, 22–24 s for 2 and about 39–40 s for 4.
+- ³ The seed-78 run reused the same prompt and references, so ComfyUI kept their encoding from the run before and only sampled. That is what a second
+  variation of the same edit costs in the studio (it makes variations with seed + 1). It is not the cost of a new edit.
+- **About the pictures:** with seed 77, the 1-, 2- and 4-reference edits came out almost the same picture: the first reference, barely changed. With seed 78
+  the 1-reference edit was applied as asked. The control reproduced all three seed-77 pictures exactly, in a different order and after unloading, so this
+  is how the model answered with that seed, not a caching fault in the benchmark. It is a timing benchmark, not a quality one.
+
+## 12. Ming-Image 0.1 Design
+
+`images_ming_design.csv`: 2026-10-12, made by `bench_ming.py`. The studio runs Ming outside ComfyUI, as **one process per job**. The process loads the model
+(53 GB), renders every seed asked for and exits, so its memory comes back. Arguments as the studio passes them: a prompt file, 1024x1024, seeds, an
+output folder. The runner used Ming's default 12 steps. Before starting, ComfyUI unloads its models, and the studio checks that about 58 GiB + 5 GiB per
+megapixel is free (63 GiB at 1024x1024).
+
+| Run | Process wall time | Load | Image 1 | Image 2 | Peak memory in use | Max GPU temp |
+|---|---:|---:|---:|---:|---:|---:|
+| Poster brief, seeds 77 + 78 | **335.2 s** | 281.3 s | 24.6 s | 21.7 s | 90.8 GiB | 72 °C |
+| Transparent background (RGBA), seeds 77 + 78 | **327.7 s** | 273.9 s | 24.4 s | 21.9 s | 86.8 GiB | 72 °C |
+
+- **Loading dominates.** A one-image job takes about 5 to 5.5 minutes, and each further image in the same job adds about 22 s. The transparent-background
+  option did not change the speed.
+- The peak includes the director (about 19 GiB), which was running from the layout step. The studio pauses it only when Ming would not fit, and here it fit
+  (86 GiB free before each run).
+- **Director layout (optional).** The studio can first have its director rewrite the brief into Ming's own JSON layout (Ming's released rewriter prompt).
+  That took **14.4 s** for the poster brief, plus **35.1 s** to start the director, which was off. The layout was saved, not rendered, so both Ming runs above
+  used plain prompts. n = 1.
+- n = 1 process per row. Load time depends on whether the 53 GB of weights are still in the file cache. The second process loaded 7 s faster than the first.
+
+## 13. Voices: Qwen3-TTS clone and narration
+
+`voice_qwen3_tts.csv`: 2026-10-12, made by `bench_voice.py` with the studio's own voice worker (`app/voice.py`), Qwen3-TTS-12Hz-1.7B-Base.
+**The reference voice is synthetic**: the 5.2 s audio of the Draft clip of a fictional speaker from section 8. No real person's voice was used.
+
+The studio clones a voice from a YouTube Short. Here the clip is a local file, so the download step is missing, and its whole speech is the reference, so the
+director's speaker pick (a vision-model call) is missing too. Everything else is the studio's code, run the way the studio runs it.
+
+| Stage | Wall time | Speech out | Realtime factor |
+|---|---:|---:|---:|
+| Prepare: Demucs (music out) 1.2 s + Whisper large-v3-turbo with word timestamps 28.9 s (mostly model load) | 32.2 s | — | — |
+| Cut the reference (4.9 s) | 0.3 s | — | — |
+| Spoken preview, own process, model load included | 34.6 s | 5.6 s | — |
+| **Clone a voice, total** (prepare + cut + preview) | **67.1 s** | | |
+| **Narration: 126-word script**, own process, model load included (as in a film's voice-over) | **56.0 s** | 33.1 s | **0.59x** |
+| Model load alone (in one process) | 24.0 s | — | — |
+| Same script, model already loaded | 26.8 s | 34.5 s | **1.29x** |
+| Same script again | 26.1 s | 34.2 s | **1.31x** |
+
+- **Realtime factor = seconds of speech / wall seconds** (above 1 = faster than realtime). The studio starts a new process for every voice-over, so a user
+  sees the 0.59x figure. Generation alone runs at about 1.3x.
+- Peak memory in use stayed under 50 GiB (the voice model plus the rest of the machine). GPU temperature stayed at or below 61 °C.
+- n = 1 per stage, and 2 for generation with the model loaded. The same script gave 33.1, 34.5 and 34.2 s of speech: the model chooses its own pace.
+- An earlier pass with a 77-word script (21–23 s of speech) gave the same picture: 52.0 s in its own process (0.41x), 16.0–16.8 s once loaded (1.34–1.38x).
+  It was replaced because the brief asked for about 30 s, and is not in the CSV.
+
+## 14. Cast: reference to video at 480p and Fast HD
+
+`cast_ref2va.csv`: 2026-10-12, made by `bench_cast.py` straight on ComfyUI with the studio's Cast graph: MiniMax H3 ref2va int8, MiniMax's official
+recipe (20 steps, res_multistep, no Turbo LoRA), 5 s (124 frames) with sound. Same inputs as the studio Cast job in section 5: the **synthetic** chef face
+(a Z-Image Turbo render), the same prompt and spoken line, seed 4242, no reference voice.
+
+| Preset | Size | Decoder | Wall time | Peak memory in use | Max GPU temp |
+|---|---|---|---:|---:|---:|
+| Draft | 864x480 | fp16 | **328.4 s** | 69.0 GiB | 84 °C |
+| Fast HD | 1344x768 | 8-bit | **979.1 s** | 74.2 GiB | 83 °C |
+
+- **Fast HD reproduced the studio job in section 5 to the second** (979 s, run on 2026-10-10 through the web app). That job may have included loading the model. This run was
+  warm (the Draft run had just loaded it), so loading is a small part of a 16-minute render either way.
+- **Draft is 3.0x faster than Fast HD** for 2.5x fewer pixels. The Draft run includes loading ref2va (21 GB) and used the fp16 video decoder. The bench pointed at
+  the wrong models folder, so it did not find the 8-bit decoder, which the studio would use. At 480p the decoder is a few seconds of a 328 s run.
+- n = 1 per row. The studio's own estimate for these jobs (`cast_estimate_s`) is 457 s for Draft and 1071 s for Fast HD.
+
+## Not measured
+
+- **Recreate a Short (Faithful and Re-imagine), and the narrator-voice clone from a YouTube Short.** Not measured: these need a source video the project may use.
+  The only recorded test inputs were third-party YouTube videos (see [What was left out](#what-was-left-out-and-why)), and the benchmark will not use a
+  stranger's video or voice. Section 13 times the same cloning code on a synthetic clip.
+
 ---
 
 ## Reported but not backed by a kept results file
@@ -234,7 +373,7 @@ They cannot be checked against data here. Treat them as notes, not results.
 | MIDI render | plain MIDI render ~1 s | job record gone |
 | Lip-sync | with the reference voice: median pitch 170 Hz vs reference 163 Hz (231 Hz without it); the line was transcribed word-perfect | analysis not kept |
 | Cast, 4-step recipe in the studio | Draft, synthetic chef face: 87 s, director 8 | job record gone; recipe since retired for quality |
-| Image edit | 20–26 s per edit | one job kept (26 s, section 5) |
+| Image edit | 20–26 s per edit | one job kept (26 s, section 5); now measured with 1, 2 and 4 references in section 11 |
 
 ## Where the build notes and the files disagree
 
@@ -280,10 +419,17 @@ python3 bench_music.py                      # section 7
 python3 midi_restyle_check.py               # MIDI restyle sweep (MIDI_RENDER=<a MIDI render .wav>)
 python3 bench_lipsync.py                    # section 8: synthetic face and voice only
 python3 seam_check.py                       # section 9: reads the studio library, renders nothing
+python3 bench_images_all.py                 # section 10: every image model the studio offers (asks the studio, STUDIO_URL)
+python3 bench_image_edit.py                 # section 11: needs section 10's pictures
+python3 bench_ming.py                       # section 12: MING_PY, MING_RUNNER; MING_LAYOUT=0 skips the director layout
+$STUDIO_TTS_PY bench_voice.py               # section 13: the tts venv's python; VOICE_REF=<a synthetic speech clip>
+python3 bench_cast.py draft fasthd          # section 14: needs bx_img2.png from section 3
 ```
 
 - Each script except `bench_presets_comfyui.py` waits for an empty ComfyUI queue. It pauses while the GPU is at 85 °C or more, and interrupts a render
-  if free unified memory drops below 6 GiB. Run them on an otherwise idle machine.
+  if free unified memory drops below 6 GiB. Run them on an otherwise idle machine. The section 10–14 scripts also wait while the studio has a job
+  queued or running, and record the peak memory in use and the GPU temperature once a second (`benchlib.Sampler`).
+- `STUDIO_APP` points the scripts at the studio's `app/` folder (director, voice worker) when they run from somewhere else.
 - Director scores need the director running (`DIRECTOR_URL`). Without it, the review field records an error and the timings are unaffected.
 - The model files are listed in [MODELS.md](MODELS.md). The TensorFold rows need `TENSORFOLD_LIB` and the FastH3 bf16 checkpoint. The engine converts the
   checkpoint to int8 on first use, so expect one slow first run (section 2).

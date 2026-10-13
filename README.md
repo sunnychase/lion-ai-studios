@@ -144,13 +144,18 @@ One DGX Spark, 5 s clip with sound, single runs (n = 1). Details and caveats are
 |---|---:|---:|
 | **Draft** 864x480, 8 steps | 132 s | **76 s** (1.74x) · **70 s** with the 8-bit decoder (1.89x) |
 | **Fast HD** 1344x768, 8 steps | 272 s | **192 s** (1.42x) |
-| **Standard** H3 + Turbo, 8 steps | 332–415 s | — |
-| **High** H3 base 1344x768, 20 steps | 1052 s | — |
+| **Standard** H3 + Turbo, 8 steps | 332–415 s | not shipped (dense path tested: 5–8 % faster, [§4](docs/BENCHMARKS.md#4-standard-and-high-on-tensorfold-experimental-vs-fast-hd)) |
+| **High** H3 base 1344x768, 20 steps | 1052 s | not shipped (dense path tested: 5–8 % faster, [§4](docs/BENCHMARKS.md#4-standard-and-high-on-tensorfold-experimental-vs-fast-hd)) |
 
 | Other | Time |
 |---|---:|
 | 20 s Draft film (2 segments, seamless) through the studio | 373 s |
-| Qwen-Image 2.1 Turbo, 1344x768 / 2752x1536 | 16 s / 44 s |
+| Qwen-Image 2.1 Turbo, 1344x768 / 2752x1536 | 10 s warm, 20 s cold / 44 s |
+| Other image models, 1344x768, warm: FLUX.2 klein · Z-Image Turbo · Krea 2 · Qwen-Image 2.1 · HiDream-O1 · Chroma1-HD | 4 · 8 · 16 · 18–20 · 26–28 · 56–58 s (n = 2 each; [all models](docs/BENCHMARKS.md#10-all-image-models-2026-10-12)) |
+| Image edit (Qwen-Image 2.1 Turbo), 1 / 2 / 4 references, warm | 16 / 24 / 40 s ([details](docs/BENCHMARKS.md#11-image-edit-1-2-and-4-references)) |
+| Ming-Image 0.1 Design, 1024x1024 | ~5.5 min per job (4.6 min of it loading), +22 s per extra image |
+| Voice clone from a 5 s clip / ~30 s narration (Qwen3-TTS) | 67 s / 56 s, i.e. 0.59x realtime (1.3x with the model loaded) |
+| Cast (reference to video, official 20 steps), 5 s: Draft 480p / Fast HD | 328 s / 979 s |
 | Qwen-Image 2.1 Turbo, 1024x1024, warm: ComfyUI / Fast (LocalRouter) | 9.3 s / 6.2 s (n = 12 each; [details](docs/FAST_IMAGES.md#measured)) |
 | ACE-Step 1.5 Turbo, 30–60 s of music | 4–16 s (3.8–7.5x realtime) |
 | MiniMax Music 3 | ~0.46x realtime |

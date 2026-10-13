@@ -1,0 +1,4 @@
+date,run,what,size,seeds,steps,wall_s,load_s,image1_s,image2_s,used_before_gib,peak_used_gib,mem_available_min_gib,gpu_temp_max_c,output,note
+2026-10-12,layout,director layout of the poster brief (Ming's own rewriter prompt on the 27B director),,,,14.4,,,,,,,,,"director was stopped; start-up 35.1 s, not included; 1943 characters of JSON. Saved, not rendered"
+2026-10-12,plain,poster brief,1024x1024,77 78,12,335.2,281.3,24.6,21.7,35.1,90.8,30.9,72,ming_01.png ming_02.png,"one process; director left running; torch 2.10.0+cu130, transformers 4.57.1"
+2026-10-12,rgba,"badge, transparent background (RGBA)",1024x1024,77 78,12,327.7,273.9,24.4,21.9,35.6,86.8,34.8,72,ming_01.png ming_02.png,"one process; director left running; torch 2.10.0+cu130, transformers 4.57.1"

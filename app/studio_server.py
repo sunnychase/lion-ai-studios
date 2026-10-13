@@ -13,6 +13,7 @@ HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import config as C                                             # noqa: E402
 import workflows as W, stitch, director as DIR                 # noqa: E402
 import music as MU                                              # noqa: E402  
+import studio_broker as SB                                      # noqa: E402  (the memory broker)
 import midi_tool as MT                                          # noqa: E402  (GM names only; mido/tinysoundfont run in midi-venv)
 
 ROOT = C.STUDIO_HOME; LIB = f"{ROOT}/library"; STATE = f"{ROOT}/state"; UP = f"{ROOT}/uploads"
@@ -66,6 +67,71 @@ def ensure_comfy():
         if comfy_up(): WS.kick(); return True
         time.sleep(2)
     return False
+
+
+# ── the optional Fast image engine (LocalRouter) + the memory broker ─────────────────────────────────────────────────────────────────
+# LocalRouter (config.LR_*) is off unless LOCALROUTER_ENABLE is set. The studio starts it for a Fast job (LOCALROUTER_SERVICE or
+# LOCALROUTER_START), LocalRouter's own idle_ttl_s unloads the model, and lr_idle() stops it after LR_IDLE_S without a Fast job.
+LR = C.LR_URL; LR_IDLE_S = C.LR_IDLE_S; LRF = {"last": 0.0, "busy": False}
+def cur_kind():
+    j = JOBS.get(GPU.get("busy") or "")
+    return "" if not j else "ming" if j["kind"] == "image" and j["params"].get("model") == W.MING else j["kind"]
+def lr_can_stop(): return bool(C.LR_SERVICE or C.LR_STOP)
+def lr_stop_now():
+    """stop LocalRouter (its unit, or LOCALROUTER_STOP); returns a short note"""
+    try:
+        if C.LR_SERVICE: return f"systemctl --user stop {C.LR_SERVICE} → rc {subprocess.run(['systemctl', '--user', 'stop', C.LR_SERVICE], capture_output=True, timeout=90).returncode}"
+        if C.LR_STOP: return f"LOCALROUTER_STOP → rc {subprocess.run(C.LR_STOP, shell=True, capture_output=True, timeout=120).returncode}"
+    except Exception as e: return f"stop failed ({type(e).__name__})"
+    return "no stop command is configured"
+BR = SB.studio_registry(SB.Broker(), COMFY, LR if C.LR_ENABLE else None, lr_stop_now if lr_can_stop() else None, DIR, cur_kind,
+                        C.DIRECTOR_LABEL, bool(C.DIRECTOR_SERVICE), C.LR_RESERVE_GIB)
+# a director call in flight marks the director busy, so the broker never stops it mid-request
+DIR._chat = BR.track("director", DIR._chat); DIR.ensure = BR.track("director", DIR.ensure)
+def lr_ready(): return C.LR_ENABLE
+def lr_up():
+    try: return json.load(urllib.request.urlopen(f"{LR}/health", timeout=3)).get("ok") is True
+    except Exception: return False
+def lr_active():
+    if not C.LR_SERVICE: return lr_up()
+    try: return subprocess.run(["systemctl", "--user", "is-active", "-q", C.LR_SERVICE], capture_output=True, timeout=10).returncode == 0
+    except Exception: return False
+def lr_ensure():
+    if lr_up(): return True
+    if not lr_ready() or not (C.LR_SERVICE or C.LR_START): return False
+    try:
+        if C.LR_SERVICE: sh(["systemctl", "--user", "start", C.LR_SERVICE], 30)
+        else: subprocess.run(C.LR_START, shell=True, capture_output=True, timeout=120)   # must return once it is started (e.g. docker start / run -d)
+    except Exception: return False
+    for _ in range(45):
+        if lr_up(): return True
+        if C.LR_SERVICE and not lr_active(): return False
+        time.sleep(2)
+    return False
+def lr_job(j):
+    p = j.get("params") or {}
+    return lr_ready() and j.get("kind") == "image" and p.get("iengine") == "localrouter" and not W.lr_fits(p.get("model"), p.get("w"), p.get("h"), p.get("count", 1))
+def lr_yield(job):
+    """a warm LocalRouter (~36 GiB) gives way before any other job: its models unload (its own POST /v1/tools/release); never fails the job"""
+    if not lr_ready(): return
+    try:
+        if not lr_job(job) and lr_up() and SB.lr_held(LR): BR.release("localrouter", f"before {job['kind']} {job['id']}")
+    except Exception: pass
+def lr_idle():
+    """stop LocalRouter after LR_IDLE_S without a Fast job — never while one runs or is queued, or while LocalRouter reports a model
+    loading/busy. One found running (a studio restart, or started by hand) gets the full window from when it was first seen."""
+    while True:
+        time.sleep(30)
+        try:
+            if LRF["busy"] or not lr_active(): continue
+            if not LRF["last"]: LRF["last"] = time.time(); continue
+            if time.time() - LRF["last"] < LR_IDLE_S: continue
+            if any(j["status"] in ("queued", "waiting_gpu", "running") and lr_job(j) for j in list(JOBS.values())): continue
+            t = SB.lr_tools(LR)
+            if t and any(x.get("state") in ("loading", "busy") for x in t.get("data") or []): continue
+            note = lr_stop_now(); LRF["last"] = 0.0
+            BR._remember({"ok": True, "log": [f"LocalRouter stopped after {LR_IDLE_S // 60} min idle ({note})"]}, "idle stop")
+        except Exception: pass
 
 
 # ── ComfyUI websocket (progress) — a minimal RFC 6455 client; text frames only ─────────────────────────────────────────────────────
@@ -944,9 +1010,57 @@ def run_ming(job):
     job["notes"] = " · ".join(notes); save()
 
 
+def run_lrfast(job):
+    """Fast (LocalRouter): the broker makes room -> LocalRouter up (started on demand) -> POST /v1/images/generations. True = done. Any
+    refusal or error -> False with the reason in the job notes (LocalRouter's models unloaded first), and run_image renders on ComfyUI."""
+    p = job["params"]; d = f"{LIB}/{job['id']}"; notes = []; t0 = time.time(); why = ""; pngs = []; res = {}
+    def back(why):
+        if lr_up(): notes.append(BR.release("localrouter", "fallback to ComfyUI"))
+        job["notes"] = " · ".join(notes + [f"Fast (LocalRouter) not used: {why} — rendered on ComfyUI"]); save(); return False
+    job["progress"].update(phase="Fast (LocalRouter) · making room"); save()
+    # only ComfyUI's idle models give way: never LocalRouter itself (warm = its model is already loaded) and never the director (a 6 s image is
+    # not worth a director restart; if ComfyUI's room is not enough, the job falls back to ComfyUI, ~3 s slower warm)
+    t = SB.lr_tools(LR); warm = any(x.get("id") == W.LR_IMAGE[p["model"]] and x.get("state") in ("ready", "busy") for x in (t or {}).get("data") or [])
+    r = BR.make_room(W.lr_need_gib(p["w"], p["h"], warm), "Fast (LocalRouter)" + (" (warm)" if warm else ""), may_release=("comfyui",)); notes += r["log"]
+    if not r["ok"]: return back(r["reason"])
+    with BR.using("localrouter"):
+        LRF["busy"] = True
+        try:
+            job["progress"].update(phase="Fast (LocalRouter) · starting"); save()
+            if not lr_ensure():
+                why = (f"LocalRouter did not come up at {LR}" if (C.LR_SERVICE or C.LR_START)
+                       else f"LocalRouter is not answering at {LR} (no LOCALROUTER_SERVICE or LOCALROUTER_START to start it)")
+            else:
+                job["progress"].update(phase=f"Fast (LocalRouter) · Qwen-Image 2.1 Turbo · {p['count']} image(s)"); save()
+                body = {"model": W.LR_IMAGE[p["model"]], "prompt": p["prompt"], "size": f"{p['w']}x{p['h']}", "n": int(p["count"]), "seed": int(p["seed"]),
+                        "response_format": "b64_json"}
+                req = urllib.request.Request(f"{LR}/v1/images/generations", data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+                try:
+                    res = json.load(urllib.request.urlopen(req, timeout=900))
+                    pngs = [base64.b64decode(x.get("b64_json") or "") for x in (res.get("data") or [])]
+                    if len(pngs) != int(p["count"]) or not all(b.startswith(b"\x89PNG\r\n\x1a\n") for b in pngs): why = f"{len(pngs)} image(s) came back, wanted {p['count']} PNG(s)"
+                except urllib.error.HTTPError as e:
+                    try: m = json.loads(e.read() or b"{}").get("error") or {}; why = f"HTTP {e.code} {m.get('type') or ''}: {str(m.get('message') or '')[:300]}"
+                    except Exception: why = f"HTTP {e.code}"
+                except Exception as e: why = f"{type(e).__name__}: {str(e)[:200]}"
+        finally: LRF.update(busy=False, last=time.time())
+    if why: return back(why)
+    if job.get("cancel"): raise RuntimeError("cancelled")
+    for i, b in enumerate(pngs):
+        dst = f"{d}/img{i + 1:02d}.png"
+        with open(dst + ".part", "wb") as f: f.write(b)
+        os.replace(dst + ".part", dst); job["outputs"].append({"file": os.path.basename(dst), "kind": "image"})
+    job["notes"] = " · ".join(notes + [f"Fast (LocalRouter) · Qwen-Image 2.1 Turbo FP8 · {time.time() - t0:.1f} s · seed {res.get('seed', p['seed'])}"]); save(); return True
+
+
 def run_image(job):
     p = job["params"]; d = f"{LIB}/{job['id']}"; os.makedirs(d, exist_ok=True)
     if p.get("model") == W.MING: return run_ming(job)                                       # Ming runs outside ComfyUI
+    if p.get("iengine") == "localrouter" and lr_ready():                                    # Fast (LocalRouter); ComfyUI below is the fallback
+        why = W.lr_fits(p["model"], p["w"], p["h"], p["count"])
+        if not why and run_lrfast(job): return
+        if why: job["notes"] = f"Fast (LocalRouter) not used: {why} — rendered on ComfyUI"; save()
+        elif not ensure_comfy(): raise RuntimeError(f"Fast (LocalRouter) fell back and ComfyUI is not answering at {COMFY}")   # the worker skipped it for this Fast job
     job["progress"].update(phase=f"{p['model']} · {p['count']} image(s)"); save()
     pid = comfy_post(W.image_graph(p["model"], p["prompt"], p["w"], p["h"], p["count"], p["seed"], f"studio/{job['id']}_img", p.get("negative", "")))
     files = [f for f in comfy_wait(pid, job) if f.lower().endswith((".png", ".jpg", ".webp")) and os.path.basename(f).startswith(f"{job['id']}_img")]
@@ -964,17 +1078,19 @@ def worker():
         if not job:
             GPU["busy"] = ""; time.sleep(2); continue
         try:
+            lr_yield(job)                                                     # a warm LocalRouter unloads before any other job
             if job["kind"] == "export":                                       # ffmpeg only, unless it re-scores (run_export asks for the GPU then)
                 job.update(status="running", started=now()); GPU["busy"] = job["id"]; save(); run_export(job)
             elif job["kind"] == "voice":
-                if meminfo_gib() < 8: raise RuntimeError(f"only {meminfo_gib():.0f} GiB free — a voice needs ~8 GiB (stop something first)")
+                vr = BR.make_room(8, "a voice", may_release=())                # the same 8 GiB check, through the broker; it releases nothing
+                if not vr["ok"]: raise RuntimeError(f"only {vr['have_gib']:.0f} GiB free — a voice needs ~8 GiB (stop something first)")
                 job.update(status="running", started=now()); GPU["busy"] = job["id"]; save(); run_voice(job)
             else:
                 nv = job["params"].get("voice") if str(job["params"].get("vo") or "").strip() else ""   # a missing narrator voice stops the film before the render
                 if nv and (not re.match(r"^[\w-]+$", str(nv)) or not os.path.exists(f"{VOICES}/{nv}/ref.json")):
                     raise RuntimeError("the narrator's voice isn't ready — its cloning failed or it was deleted. Pick another narrator (or none) and queue again")
                 wait_gpu(job)
-                if not ensure_comfy(): raise RuntimeError(f"ComfyUI is not answering at {COMFY} (see COMFY_URL / COMFY_SERVICE in studio.env)")
+                if not lr_job(job) and not ensure_comfy(): raise RuntimeError(f"ComfyUI is not answering at {COMFY} (see COMFY_URL / COMFY_SERVICE in studio.env)")   # Fast jobs start ComfyUI only on fallback
                 job.update(status="running", started=now()); GPU["busy"] = job["id"]; save()
                 run_recreate(job) if job["kind"] == "recreate" else run_retake(job) if job["kind"] == "retake" else run_music(job) if job["kind"] == "music" else run_edit(job) if job["kind"] == "edit" else run_image(job) if job["kind"] == "image" else run_keyframes(job) if job["kind"] == "keyframes" else run_video(job)
             job.update(status="done", finished=now()); job["progress"]["phase"] = "done"
@@ -1007,7 +1123,10 @@ def state():
     return {"jobs": sorted(JOBS.values(), key=lambda j: j["created"], reverse=True)[:60], "gpu": {**o, **GPU, "comfy": comfy_up(), "heat": h},
             "presets": {k: {**v, "est5": W.estimate_s(k, 5), "est15": W.estimate_s(k, 15)} for k, v in W.VIDEO.items()},
             "image_models": W.image_models(), "tf_ready": W.tf_ready(), "vae8_ready": W.vae8_ready(), "cast_ready": W.cast_ready(), "music_ready": {e: MU.ready(e) for e in MU.ENGINES}, "gm": MT.GM, "kits": MT.KITS, "music_engines": MU.ENGINES, "music_keys": MU.KEYS, "image_preset": W.IMAGE_PRESET, "guide_frames": W.GUIDE_FRAMES, "director": DIR.status(), "voices": voices(),
-            "voice_ready": os.path.exists(TTS_PY) and os.path.isdir(f"{C.MODELS}/Qwen3-TTS-12Hz-1.7B-Base"), "brand": {"tenant": C.TENANT_NAME}}
+            "voice_ready": os.path.exists(TTS_PY) and os.path.isdir(f"{C.MODELS}/Qwen3-TTS-12Hz-1.7B-Base"), "brand": {"tenant": C.TENANT_NAME},
+            "lr_ready": lr_ready(), "lr_models": list(W.LR_IMAGE), "lr_sizes": [f"{a}x{b}" for a, b in W.LR_GO_SIZES], "lr_n": W.LR_GO_N,
+            "lr": {"busy": LRF["busy"], "idle_stop_s": LR_IDLE_S if lr_can_stop() else 0},
+            "broker": BR.status()}
 
 
 def vgraph(p, *a, **k):
@@ -1108,7 +1227,8 @@ def mk_params(b):
         w, h = int(b.get("w") or 1344), int(b.get("h") or 768)
         return "image", {"model": model, "prompt": b.get("picture", "").strip(), "negative": b.get("negative", ""), "w": w, "h": h,
                          "count": max(1, min(4, int(b.get("count") or 1))), "seed": seed, "preset": preset,
-                         "layout": b.get("layout") is not False, "alpha": bool(b.get("alpha"))}   # layout / alpha: Ming-only options
+                         "layout": b.get("layout") is not False, "alpha": bool(b.get("alpha")),   # layout / alpha: Ming-only options
+                         "iengine": "localrouter" if b.get("iengine") == "localrouter" else "comfy"}   # the image engine: ComfyUI or Fast (LocalRouter)
     if mode == "keyframes":
         ims = b.get("images") or []
         if not isinstance(ims, list) or not 2 <= len(ims) <= 12: raise ValueError("pick 2 to 12 images, in order")
@@ -1271,6 +1391,7 @@ def main():
     for j in JOBS.values():                                    # a restart mid-render: that render is lost, say so
         if j["status"] == "running": j.update(status="failed", error="the studio restarted during this render")
     save(); WS.start(); threading.Thread(target=worker, daemon=True).start()
+    if lr_ready() and lr_can_stop() and LR_IDLE_S > 0: threading.Thread(target=lr_idle, daemon=True).start()   # stops an idle LocalRouter
     srv = ThreadingHTTPServer((C.HOST, PORT), H); print(f"Lion AI Studios on http://{C.HOST}:{PORT}", flush=True); srv.serve_forever()
 
 

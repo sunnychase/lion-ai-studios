@@ -1,0 +1,24 @@
+# EXAMPLE: LocalRouter as an on-demand systemd --user unit for the studio's optional "Fast" image engine (docs/FAST_IMAGES.md).
+# Not installed by scripts/install_services.sh. To use it: replace @LOCALROUTER_HOME@ (the folder LocalRouter's installer made,
+# holding weights/ and data/) and @LOCALROUTER_IMAGE@ (the Docker image it built, e.g. localrouter:dev), copy it to
+# ~/.config/systemd/user/lion-localrouter.service, run `systemctl --user daemon-reload`, and set in studio.env:
+#   LOCALROUTER_ENABLE=1
+#   LOCALROUTER_SERVICE=lion-localrouter.service
+# The studio starts it for a Fast job and stops it after LOCALROUTER_IDLE_S without one. There is no [Install] section on purpose:
+# it never starts at boot. The host side is bound to 127.0.0.1 only (inside the container the daemon listens on the container's
+# own interfaces, so the published port reaches it). Your user must be allowed to run docker.
+[Unit]
+Description=LocalRouter for Lion AI Studios (Fast images, on demand, 127.0.0.1:8190 only)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/docker run --rm --name lion-localrouter --gpus all -p 127.0.0.1:8190:8190 \
+  -v @LOCALROUTER_HOME@/weights:/models:ro \
+  -v @LOCALROUTER_HOME@/data:/data \
+  -v @LOCALROUTER_HOME@/tools.studio.json:/etc/localrouter/tools.json:ro \
+  @LOCALROUTER_IMAGE@ serve --host all --config /etc/localrouter/tools.json --data /data
+ExecStop=/usr/bin/docker stop -t 20 lion-localrouter
+TimeoutStartSec=60
+TimeoutStopSec=40
+Restart=no

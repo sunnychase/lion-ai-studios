@@ -12,6 +12,9 @@ under its own terms.
 - **Ming-Image** ([inclusionAI/Ming-Image](https://github.com/inclusionAI/Ming-Image), weights
   [inclusionAI/Ming-Image-0.1-Design](https://huggingface.co/inclusionAI/Ming-Image-0.1-Design), MIT). Not redistributed;
   `app/ming_runner.py` imports its `infer.py` unchanged, and the director uses its released rewriter prompt from that checkout.
+- **LocalRouter** ([jayleaton/localrouter](https://github.com/jayleaton/localrouter), Apache-2.0). Optional; not redistributed.
+  The studio talks to it over HTTP. `systemd/lion-localrouter.service.example` and `docs/localrouter-tools.example.json` are
+  example settings for it.
 - **Python packages**: mido, tinysoundfont, qwen-tts, demucs, transformers, accelerate, soundfile, yt-dlp, PyTorch, each under its own licence.
 - **MuseScore General soundfont** (MIT).
 - **Models**: see [docs/MODELS.md](docs/MODELS.md). Several restrict commercial use.

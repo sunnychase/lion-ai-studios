@@ -2,7 +2,23 @@
 
 Updates to Lion AI Studios, newest first. The project has no version numbers; each entry is dated.
 
-## 2026-10-12 — Ming-Image 0.1 Design, image downloads, narrator cloning
+## 2026-10-12 — Ming-Image 0.1 Design, image downloads, narrator cloning, Fast images
+
+**Images: optional Fast engine (LocalRouter)**
+- Image builder → *Engine*: *ComfyUI* (default) or *Fast (LocalRouter)*. Fast sends plain Qwen-Image 2.1 Turbo text to image at
+  1024×1024, one image per job, to [LocalRouter](https://github.com/jayleaton/localrouter)'s FP8 engine. Anything else renders on
+  ComfyUI as before, and so does a Fast job that cannot be made (no room, LocalRouter not answering, an error or a bad reply), with
+  the reason in the job notes. Fast jobs start ComfyUI only when they fall back.
+- Off by default. New settings: `LOCALROUTER_ENABLE`, `LOCALROUTER_URL`, `LOCALROUTER_MODEL`, `LOCALROUTER_SERVICE` (or
+  `LOCALROUTER_START` / `LOCALROUTER_STOP`), `LOCALROUTER_IDLE_S`, `LOCALROUTER_RESERVE_GIB`. The studio starts LocalRouter for a
+  Fast job and stops it after 10 minutes without one; a warm LocalRouter unloads its model before every other job.
+- An example on-demand unit (`systemd/lion-localrouter.service.example`) and model list (`docs/localrouter-tools.example.json`);
+  setup in [docs/FAST_IMAGES.md](docs/FAST_IMAGES.md).
+- New `app/studio_broker.py`, a small memory broker: one list of what holds memory (LocalRouter, ComfyUI, the director, Ming, a
+  voice job) that frees idle holders, lowest priority first, and never a busy one; it refuses when it cannot read the memory.
+  Fast jobs and the voice check use it; `/api/state` shows it under `broker`.
+- Job cards in the Queue now show the job's notes (Ming and Fast write them).
+- Measured on one DGX Spark at 1024×1024, n = 12 each: Fast 6.2 s warm and about 12–13 s from cold; ComfyUI 9.3 s warm.
 
 **Video: clone the narrator's voice from a YouTube Short**
 - *Music & voice-over* → *Clone a narrator voice from a YouTube Short*: paste a Shorts link, optionally say whose voice and name

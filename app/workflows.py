@@ -42,6 +42,32 @@ IMAGE = {
 }
 IMAGE_PRESET = {"fasthd": "Z-Image-Turbo (photoreal, best)", "draft": "Z-Image-Turbo (photoreal, best)", "standard": "Krea 2 Turbo + realism LoRA", "high": "Qwen-Image 2.1 Turbo (8 steps, 2K, best text)"}
 MODELS_DIR = C.COMFY_MODELS
+# the optional "Fast (LocalRouter)" image engine. LocalRouter's qwen-image-2.1-turbo (FP8, its checkpoint's own 8 steps, CFG 1, as the ComfyUI
+# node runs it) is the same Qwen-Image 2.1 Turbo as this ComfyUI entry. Plain text to image only, and only what was measured: 1024x1024, one
+# image per job. Everything else (other sizes, variations, 2K, edits, other models, Ming) stays on ComfyUI.
+LR_IMAGE = {"Qwen-Image 2.1 Turbo (8 steps, 2K, best text)": C.LR_MODEL}; LR_RESERVE_GIB = C.LR_RESERVE_GIB
+LR_GO_SIZES = ((1024, 1024),); LR_GO_N = 1                 # the measured envelope
+# what LocalRouter itself accepts (not enabled; widen LR_GO_SIZES / LR_GO_N only after measuring each size and count):
+LR_MAX_SIDE = 1664; LR_MIN_SIDE = 256; LR_SIDE_STEP = 16; LR_MAX_N = 4   # tools.json max_side · API sizes 256+ in steps of 16 · n 1-4
+
+
+def lr_fits(model, w, h, count=1):
+    """'' when an image job can take the fast path, else why it stays on ComfyUI"""
+    try: w, h, count = int(w), int(h), int(count)
+    except (TypeError, ValueError): return "no usable size"
+    if model not in LR_IMAGE: return f"Fast runs Qwen-Image 2.1 Turbo only, not {model}"
+    if (w, h) not in LR_GO_SIZES: return f"Fast takes {' / '.join(f'{a}x{b}' for a, b in LR_GO_SIZES)} only for now, not {w}x{h}"
+    if count != LR_GO_N: return f"Fast makes {LR_GO_N} image per job for now, not {count}"
+    if max(w, h) > LR_MAX_SIDE or min(w, h) < LR_MIN_SIDE or w % LR_SIDE_STEP or h % LR_SIDE_STEP: return f"{w}x{h} is outside what LocalRouter takes"   # for a wider envelope
+    if not 1 <= count <= LR_MAX_N: return f"LocalRouter makes 1 to {LR_MAX_N} images"
+    return ""
+
+
+def lr_need_gib(w, h, warm=False):
+    """MemAvailable LocalRouter needs to admit a job: its own estimate (36 000 MiB resident for fp8s, counted only when the model is not
+    loaded yet, + w*h*8 bytes working) + its reserve (it refuses unless MemAvailable - reserve >= that) + 0.5 GiB margin
+    -> ~50.7 GiB cold, ~15.5 GiB warm with a 15 GiB reserve. Measured peak at 1024x1024 on a DGX Spark: 42.6 GB."""
+    return (0 if warm else 36000 / 1024) + int(w) * int(h) * 8 / 2 ** 30 + LR_RESERVE_GIB + 0.5
 
 
 def tf_ready():

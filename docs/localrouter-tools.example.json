@@ -1,0 +1,10 @@
+{
+ "reserve_bytes": 16106127360,
+ "keep_outputs_s": 3600,
+ "defaults": {"text_to_image": "qwen-image-2.1-turbo"},
+ "tools": [
+  {"id": "qwen-image-2.1-turbo", "kind": "image", "engine": "qwen_image_turbo", "name": "Qwen-Image 2.1 Turbo (FP8, 8 steps)",
+   "weights": "/models/qwen-image-2.1", "idle_ttl_s": 300, "priority": 10, "keep_loaded": false,
+   "options": {"precision": "fp8s", "max_side": 1664}}
+ ]
+}

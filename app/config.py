@@ -56,3 +56,14 @@ MING_MODEL = _p(E("MING_MODEL", os.path.join(MODELS, "Ming-Image-0.1-Design"))) 
 MING_CODE = _p(E("MING_CODE", os.path.join(STUDIO_HOME, "ming/Ming-Image")))      # a checkout of github.com/inclusionAI/Ming-Image
 MING_PY = _p(E("MING_PY", os.path.join(STUDIO_HOME, "envs/ming/bin/python")))     # the venv that runs it (torch + Ming's pins)
 MING_RUNNER = _p(E("MING_RUNNER", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ming_runner.py")))
+
+# ── optional: the "Fast" image engine, LocalRouter (github.com/jayleaton/localrouter; see docs/FAST_IMAGES.md) — off by default ──
+# Plain Qwen-Image 2.1 Turbo text to image at 1024x1024, one image per job; anything it cannot take renders on ComfyUI as before.
+LR_ENABLE = E("LOCALROUTER_ENABLE", "0").strip().lower() in ("1", "true", "yes", "on")
+LR_URL = E("LOCALROUTER_URL", "http://127.0.0.1:8190").rstrip("/")
+LR_MODEL = E("LOCALROUTER_MODEL", "qwen-image-2.1-turbo")  # LocalRouter's id for Qwen-Image 2.1 Turbo (its tools.json)
+LR_SERVICE = E("LOCALROUTER_SERVICE", "")                  # systemd --user unit the studio starts for a Fast job and stops when idle
+LR_START = E("LOCALROUTER_START", "")                      # or shell commands that start / stop it (used when LOCALROUTER_SERVICE is empty);
+LR_STOP = E("LOCALROUTER_STOP", "")                        # with none of the three, the studio only uses it while it already answers
+LR_IDLE_S = int(E("LOCALROUTER_IDLE_S", "600"))            # stop it after this long without a Fast job (0 = never)
+LR_RESERVE_GIB = float(E("LOCALROUTER_RESERVE_GIB", "15")) # the reserve_bytes of its tools.json, in GiB

@@ -18,6 +18,8 @@ under its own terms.
 - **Python packages**: mido, tinysoundfont, qwen-tts, demucs, transformers, accelerate, soundfile, yt-dlp, PyTorch, each under its own licence.
 - **MuseScore General soundfont** (MIT).
 - **Models**: see [docs/MODELS.md](docs/MODELS.md). Several restrict commercial use.
+- **README and repository-template layout** adapted from [morluto/rea](https://github.com/morluto/rea) (MIT): the structure
+  only; the wording is this project's own.
 - **Fonts**: Inter (SIL OFL 1.1), loaded from Google Fonts by the web page.
 - **Sample media** in `samples/` was generated with this studio from the prompts listed in `samples/README.md`.
   Each output is subject to the licence of the model that made it.

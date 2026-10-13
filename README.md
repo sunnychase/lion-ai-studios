@@ -5,19 +5,102 @@
 Video with sound · images · music · voices · a director that writes and reviews every shot. Everything runs locally on one Spark.</p>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat" alt="License: MIT"></a>
-  <a href="#built-for-the-dgx-spark"><img src="https://img.shields.io/badge/python-3.12-3776AB?style=flat&logo=python&logoColor=white" alt="Python 3.12"></a>
-  <a href="#built-for-the-dgx-spark"><img src="https://img.shields.io/badge/platform-NVIDIA%20DGX%20Spark-76B900?style=flat&logo=nvidia&logoColor=white" alt="Platform: NVIDIA DGX Spark"></a>
-  <a href="#built-for-the-dgx-spark"><img src="https://img.shields.io/badge/ffmpeg-6.x%2B-007808?style=flat&logo=ffmpeg&logoColor=white" alt="ffmpeg 6.x or newer"></a>
-  <a href="https://github.com/comfyanonymous/ComfyUI"><img src="https://img.shields.io/badge/renderer-ComfyUI-555555?style=flat" alt="Renderer: ComfyUI"></a>
-  <a href="#built-for-the-dgx-spark"><img src="https://img.shields.io/badge/cloud%20APIs-none-success?style=flat" alt="Cloud APIs: none"></a>
-  <a href="https://github.com/sunnychase/lion-ai-studios/commits/main"><img src="https://img.shields.io/github/last-commit/sunnychase/lion-ai-studios?style=flat" alt="Last commit"></a>
-  <a href="https://github.com/sunnychase/lion-ai-studios"><img src="https://img.shields.io/github/stars/sunnychase/lion-ai-studios?style=flat" alt="GitHub stars"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License: MIT"></a>
+  <a href="#requirements"><img src="https://img.shields.io/badge/python-3.12-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.12"></a>
+  <a href="#requirements"><img src="https://img.shields.io/badge/platform-NVIDIA%20DGX%20Spark-76B900?style=flat-square&logo=nvidia&logoColor=white" alt="Platform: NVIDIA DGX Spark"></a>
+  <a href="#requirements"><img src="https://img.shields.io/badge/ffmpeg-6.x%2B-007808?style=flat-square&logo=ffmpeg&logoColor=white" alt="ffmpeg 6.x or newer"></a>
+  <a href="https://github.com/comfyanonymous/ComfyUI"><img src="https://img.shields.io/badge/renderer-ComfyUI-555555?style=flat-square" alt="Renderer: ComfyUI"></a>
+  <a href="#faq"><img src="https://img.shields.io/badge/cloud%20APIs-none-success?style=flat-square" alt="Cloud APIs: none"></a>
+  <a href="https://github.com/sunnychase/lion-ai-studios/commits/main"><img src="https://img.shields.io/github/last-commit/sunnychase/lion-ai-studios?style=flat-square" alt="Last commit"></a>
+  <a href="https://github.com/sunnychase/lion-ai-studios"><img src="https://img.shields.io/github/stars/sunnychase/lion-ai-studios?style=flat-square" alt="GitHub stars"></a>
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#what-you-can-make">What you can make</a> ·
+  <a href="#samples">Samples</a> ·
+  <a href="#faq">FAQ</a> ·
+  <a href="#documentation">Documentation</a> ·
+  <a href="#contributing">Contributing</a>
 </p>
 
 <p align="center"><img src="docs/screenshots/desktop-video.png" width="100%" alt="The Video builder"></p>
 
-## What it does
+## Quick start
+
+```bash
+git clone https://github.com/sunnychase/lion-ai-studios.git && cd lion-ai-studios
+cp studio.env.example studio.env            # edit paths, ports and the director's address
+./scripts/install_comfyui.sh                # ComfyUI at the tested commit, its venv, and the studio's image node
+python3 scripts/download_models.py          # core models, ~122 GB (--list to see everything, --all for ~331 GB)
+./scripts/setup_envs.sh                     # optional: voice + MIDI helper environments
+./scripts/install_services.sh               # systemd --user units; open http://127.0.0.1:8482
+```
+
+Then set up the director ([docs/DIRECTOR.md](docs/DIRECTOR.md)) and, optionally, the TensorFold engine
+([tensorfold/README.md](tensorfold/README.md)), Ming-Image ([docs/MING.md](docs/MING.md)) and the Fast image engine
+([docs/FAST_IMAGES.md](docs/FAST_IMAGES.md)). The web app itself is a single Python file that uses only the standard
+library. It starts ComfyUI when the first render needs it.
+
+PyTorch may warn that the GB10 (compute capability 12.1) is newer than the range it was built for (up to 12.0). That warning
+is harmless; everything here was tested with it.
+
+**Which models do I need?** See [docs/MODELS.md](docs/MODELS.md). Every file has its exact Hugging Face source, size,
+destination folder and licence. Short version:
+
+| You want | Download | Size |
+|---|---|---:|
+| Video with sound, all presets | `--group video` core files: MiniMax H3 int8, FastH3 int8, H3 Turbo LoRA, text encoder, video + audio decoders | 67 GB |
+| Images | Z-Image-Turbo and Qwen-Image 2.1 Turbo (core); eight more models are optional | 45 GB core / 168 GB all |
+| Music | ACE-Step 1.5 Turbo (core); MiniMax Music 3 and the MIDI soundfont are optional | 10 / 22 GB |
+| Voices | Qwen3-TTS 1.7B Base + Whisper large-v3-turbo | 6 GB |
+| Cast / Recreate | MiniMax H3 reference-to-video int8 | 21 GB |
+| TensorFold engine | FastH3 bf16 | 44 GB |
+| Director | Qwen3.8-27B, 4-bit (via its own recipe) | ~20 GB |
+| Ming-Image 0.1 Design (optional) | `inclusionAI/Ming-Image-0.1-Design` + the official code and its own venv ([docs/MING.md](docs/MING.md)) | 53 GB |
+
+### Requirements
+
+| | |
+|---|---|
+| **Hardware** | NVIDIA **DGX Spark** (GB10 Grace Blackwell, **128 GB unified memory**, aarch64). Video uses ~55 GB while rendering; the director needs ~19 GB more. Other GB10 machines with 128 GB should work but are untested. |
+| **OS** | DGX OS / Ubuntu 24.04, NVIDIA driver 580+, CUDA 13.0 |
+| **Disk** | ~150 GB for the core models, ~350 GB for everything, plus room for your library. Use the internal NVMe: models must not run off network storage. |
+| **Software** | Python 3.12, `ffmpeg` 6.x or newer (tested 6.1.1, the Ubuntu 24.04 / DGX OS package; 4.4 pads Faithful shots short), `git`, `curl`; Docker only for the TensorFold director recipe |
+| **Renderer** | ComfyUI pinned to commit `b26625f2` (v0.39.0 + 18), PyTorch 2.10 + cu130 |
+
+### Configuration
+
+Everything machine-specific lives in `studio.env` ([template](studio.env.example)): paths, ports, the ComfyUI address,
+the director's address and model name, the thermal guard (pause at 95 °C, resume below 85 °C), and an optional
+*GPU tenant*. That is another service, such as a vLLM server, that the studio may stop before rendering and offer to start again
+afterwards. It always asks you first. The optional Ming-Image model and the optional Fast image engine (LocalRouter, off by
+default) are configured there too.
+
+**Remote access.** The app listens on `127.0.0.1` and has no login. To use it from your phone, put it behind an
+authenticating reverse proxy or tunnel (for example Cloudflare Access, Tailscale, or nginx with auth). Never expose it bare.
+
+## How it works
+
+```
+ browser (desktop or phone)
+        │  http://127.0.0.1:8482
+        ▼
+ studio server ── app/studio_server.py: one Python file, standard library only; the page, the queue, the library
+        │
+        ├── ComfyUI ............ renders video with sound (MiniMax H3 / FastH3), the image models and music
+        ├── the director ....... a vision-language model behind an OpenAI-compatible API: writes, reviews, arranges
+        └── helper runners ..... voices (Qwen3-TTS, Whisper, Demucs), MIDI, and the optional Ming-Image and Fast (LocalRouter) engines
+                                  all on one DGX Spark
+```
+
+The studio server keeps one queue and runs the oldest job first, one at a time. It starts ComfyUI when the first render
+needs it, waits for enough free memory before loading models, and pauses between segments when the board gets hot.
+Each helper runs in its own Python environment, so the server itself needs nothing beyond the standard library.
+Everything machine-specific comes from `studio.env` through `app/config.py`.
+
+## What you can make
 
 | Builder | What you get |
 |---|---|
@@ -51,60 +134,6 @@ All of these were made with this repo on one DGX Spark. Prompts and settings are
 <p><img src="docs/screenshots/desktop-library.png" width="49%" alt="Library"> <img src="docs/screenshots/desktop-music.png" width="49%" alt="Music builder"></p>
 <p><img src="docs/screenshots/phone-video.png" width="24%" alt="Phone: video"> <img src="docs/screenshots/phone-library.png" width="24%" alt="Phone: library"> <img src="docs/screenshots/desktop-image.png" width="49%" alt="Image builder"></p>
 
-## Built for the DGX Spark
-
-| | |
-|---|---|
-| **Hardware** | NVIDIA **DGX Spark** (GB10 Grace Blackwell, **128 GB unified memory**, aarch64). Video uses ~55 GB while rendering; the director needs ~19 GB more. Other GB10 machines with 128 GB should work but are untested. |
-| **OS** | DGX OS / Ubuntu 24.04, NVIDIA driver 580+, CUDA 13.0 |
-| **Disk** | ~150 GB for the core models, ~350 GB for everything, plus room for your library. Use the internal NVMe: models must not run off network storage. |
-| **Software** | Python 3.12, `ffmpeg` 6.x or newer (tested 6.1.1, the Ubuntu 24.04 / DGX OS package; 4.4 pads Faithful shots short), `git`, `curl`; Docker only for the TensorFold director recipe |
-| **Renderer** | ComfyUI pinned to commit `b26625f2` (v0.39.0 + 18), PyTorch 2.10 + cu130 |
-
-## Install
-
-```bash
-git clone https://github.com/sunnychase/lion-ai-studios.git && cd lion-ai-studios
-cp studio.env.example studio.env            # edit paths, ports and the director's address
-./scripts/install_comfyui.sh                # ComfyUI at the tested commit, its venv, and the studio's image node
-python3 scripts/download_models.py          # core models, ~122 GB (--list to see everything, --all for ~331 GB)
-./scripts/setup_envs.sh                     # optional: voice + MIDI helper environments
-./scripts/install_services.sh               # systemd --user units; open http://127.0.0.1:8482
-```
-
-Then set up the director ([docs/DIRECTOR.md](docs/DIRECTOR.md)) and, optionally, the TensorFold engine
-([tensorfold/README.md](tensorfold/README.md)), Ming-Image ([docs/MING.md](docs/MING.md)) and the Fast image engine
-([docs/FAST_IMAGES.md](docs/FAST_IMAGES.md)). The web app itself is a single Python file that uses only the standard
-library. It starts ComfyUI when the first render needs it.
-
-PyTorch may warn that the GB10 (compute capability 12.1) is newer than the range it was built for (up to 12.0). That warning
-is harmless; everything here was tested with it.
-
-**Which models do I need?** See [docs/MODELS.md](docs/MODELS.md). Every file has its exact Hugging Face source, size,
-destination folder and licence. Short version:
-
-| You want | Download | Size |
-|---|---|---:|
-| Video with sound, all presets | `--group video` core files: MiniMax H3 int8, FastH3 int8, H3 Turbo LoRA, text encoder, video + audio decoders | 67 GB |
-| Images | Z-Image-Turbo and Qwen-Image 2.1 Turbo (core); eight more models are optional | 45 GB core / 168 GB all |
-| Music | ACE-Step 1.5 Turbo (core); MiniMax Music 3 and the MIDI soundfont are optional | 10 / 22 GB |
-| Voices | Qwen3-TTS 1.7B Base + Whisper large-v3-turbo | 6 GB |
-| Cast / Recreate | MiniMax H3 reference-to-video int8 | 21 GB |
-| TensorFold engine | FastH3 bf16 | 44 GB |
-| Director | Qwen3.8-27B, 4-bit (via its own recipe) | ~20 GB |
-| Ming-Image 0.1 Design (optional) | `inclusionAI/Ming-Image-0.1-Design` + the official code and its own venv ([docs/MING.md](docs/MING.md)) | 53 GB |
-
-## Configuration
-
-Everything machine-specific lives in `studio.env` ([template](studio.env.example)): paths, ports, the ComfyUI address,
-the director's address and model name, the thermal guard (pause at 95 °C, resume below 85 °C), and an optional
-*GPU tenant*. That is another service, such as a vLLM server, that the studio may stop before rendering and offer to start again
-afterwards. It always asks you first. The optional Ming-Image model and the optional Fast image engine (LocalRouter, off by
-default) are configured there too.
-
-**Remote access.** The app listens on `127.0.0.1` and has no login. To use it from your phone, put it behind an
-authenticating reverse proxy or tunnel (for example Cloudflare Access, Tailscale, or nginx with auth). Never expose it bare.
-
 ## Benchmarks
 
 One DGX Spark, 5 s clip with sound, single runs (n = 1). Details and caveats are in the full report.
@@ -129,6 +158,82 @@ renders at a higher resolution, which is why it is the default preset.
 
 Full tables, methods and limitations are in [docs/BENCHMARKS.md](docs/BENCHMARKS.md), and the raw results and scripts are in [benchmarks/](benchmarks/).
 
+## FAQ
+
+<details>
+<summary><b>Does anything leave my machine?</b></summary>
+
+Rendering, the director, voices and music all run on the Spark, and the app listens on `127.0.0.1` only. The internet is
+used to download models, to fetch a YouTube Short when you paste one into *Recreate a Short* or the voice cloner, and by the
+page to load the Inter font from Google Fonts. No cloud API is called.
+</details>
+
+<details>
+<summary><b>Which hardware do I need?</b></summary>
+
+An NVIDIA DGX Spark (GB10, 128 GB unified memory). Video uses about 55 GB while rendering and the director about 19 GB more.
+Other GB10 machines with 128 GB should work but are untested. See [Requirements](#requirements).
+</details>
+
+<details>
+<summary><b>How long do renders take?</b></summary>
+
+On one Spark, a 5 s clip with sound takes 132 s at Draft (76 s with the TensorFold engine) and 272 s at Fast HD (192 s). A
+Qwen-Image 2.1 Turbo image takes 16 s at 1344x768, and ACE-Step makes 30–60 s of music in 4–16 s. All numbers and their
+caveats are in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+</details>
+
+<details>
+<summary><b>Can I run it without ComfyUI?</b></summary>
+
+No. ComfyUI renders the video, the image models and the music. Voices, MIDI, Ming-Image and the optional Fast image engine run
+beside it in their own environments, but the studio is built around ComfyUI and starts it on the first render.
+</details>
+
+<details>
+<summary><b>Do I need the director?</b></summary>
+
+Not to render. Without it the studio still makes video, images and music; *Write it*, reviews, music briefs, MIDI arranging,
+*Recreate a Short* and Ming-Image's layout step need it. Setup: [docs/DIRECTOR.md](docs/DIRECTOR.md).
+</details>
+
+<details>
+<summary><b>Can I use what I make commercially?</b></summary>
+
+The code here is MIT, but every model keeps its own licence, and several restrict commercial use (among them Qwen-Image 2.1,
+Juggernaut Z, Krea 2 and MiniMax H3). Check [docs/MODELS.md](docs/MODELS.md) before you sell or publish.
+</details>
+
+<details>
+<summary><b>Can I use it from my phone?</b></summary>
+
+Yes, the page works on a phone, but the app has no login. Put it behind an authenticating reverse proxy or tunnel (for
+example Cloudflare Access, Tailscale, or nginx with auth). Never expose it bare.
+</details>
+
+<details>
+<summary><b>Is it safe to clone voices and recast people?</b></summary>
+
+Only with consent. Cast, Recreate and the voice cloner ask you to confirm you have the right to use the person's likeness or
+voice. Read [docs/RESPONSIBLE_USE.md](docs/RESPONSIBLE_USE.md).
+</details>
+
+## Documentation
+
+| | |
+|---|---|
+| [docs/MODELS.md](docs/MODELS.md) | every model: source, size, destination folder, licence |
+| [docs/DIRECTOR.md](docs/DIRECTOR.md) | setting up the director (TensorFold recipe or any OpenAI-compatible server) |
+| [docs/MING.md](docs/MING.md) | the optional Ming-Image 0.1 Design model: weights, code and venv |
+| [docs/FAST_IMAGES.md](docs/FAST_IMAGES.md) | the optional Fast image engine (LocalRouter) and the memory broker |
+| [tensorfold/README.md](tensorfold/README.md) | the optional TensorFold engine for FastH3 |
+| [docs/BENCHMARKS.md](docs/BENCHMARKS.md) | full benchmark tables, methods and limitations ([raw results](benchmarks/)) |
+| [docs/RESPONSIBLE_USE.md](docs/RESPONSIBLE_USE.md) | consent, copyright and labelling |
+| [samples/README.md](samples/README.md) | the prompts and settings behind every sample |
+| [studio.env.example](studio.env.example) | every setting, with comments |
+| [CHANGELOG.md](CHANGELOG.md) | what changed in each update |
+| [NOTICE.md](NOTICE.md) | third-party software, models and fonts |
+
 ## Repository
 
 ```
@@ -148,7 +253,13 @@ CHANGELOG.md       what changed in each update
 Voice cloning, Cast and Recreate can be misused. Use them only with people who have consented, respect copyright, and
 label AI-generated media. Read [docs/RESPONSIBLE_USE.md](docs/RESPONSIBLE_USE.md).
 
-## Credits and licence
+## Contributing
+
+Bug reports and focused pull requests are welcome: [open an issue](https://github.com/sunnychase/lion-ai-studios/issues) or
+[send a pull request](https://github.com/sunnychase/lion-ai-studios/pulls). Keep machine-specific settings in `studio.env`
+(read through `app/config.py`), never in the code.
+
+## License
 
 The code in this repository is under the [MIT licence](LICENSE). It builds on ComfyUI, MiniMax H3 and Music 3, FastVideo's
 FastH3, Qwen, ACE-Step, TensorFold and many open models; see [NOTICE.md](NOTICE.md). Each model keeps its own licence, and

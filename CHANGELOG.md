@@ -2,7 +2,11 @@
 
 Updates to Lion AI Studios, newest first. The project has no version numbers; each entry is dated.
 
-## 2026-10-12 — Ming-Image 0.1 Design
+## 2026-10-12 — Ming-Image 0.1 Design, image downloads
+
+**Library: download images**
+- Image and edit cards now have a *Download* button for every picture (*Download 1…4* when a job made several). The file is
+  saved as `studio_<job id>_<file>`. Video and music cards already had one.
 
 **Images: Ming-Image 0.1 Design (optional)**
 - inclusionAI's Ming-Image-0.1-Design (MIT, 6B) joins the Image menu for posters, UI screens, infographics and other text-heavy

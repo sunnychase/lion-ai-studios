@@ -18,7 +18,7 @@ Video with sound · images · music · voices · a director that writes and revi
 | **Cast** | Put the person from up to 3 reference photos into the video (H3 reference-to-video, the official recipe). Consent checkbox required. |
 | **Recreate a Short** | Paste a YouTube Short and recast it. **Faithful** (default) follows the original frame by frame: the director picks out the performer and checks anchor frames about 1.2 s apart inside every shot; only where the performer's face is visible is your cast swapped in (from one clean portrait, never from an earlier swap), and H3 animates between the anchors, each clip retimed to the exact gap. **Re-imagine** has the director re-describe each shot and re-shoots it with your cast, optionally with your changes. The output keeps the Short's shape (vertical stays vertical) unless you pick landscape. **Soundtrack:** the original audio exactly (default), the original music under your cast's voices, or new sound made with the picture. With the original sound, every shot is cut to the original's length so the cuts land on the beat. |
 | **Editor** | Re-take any segment, re-score the film, and export with crossfaded seams. |
-| **Library / Queue** | Everything you make, filterable. Renders keep going if you close the page. |
+| **Library / Queue** | Everything you make, filterable, with a download button on every video, song and image. Renders keep going if you close the page. |
 
 A **TensorFold** int8 engine for FastH3 is optional and makes Draft **1.7–1.9x** and Fast HD **1.4x** faster ([benchmarks](docs/BENCHMARKS.md)).
 

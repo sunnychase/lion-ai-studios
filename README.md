@@ -4,6 +4,17 @@
 <p align="center"><b>Professional Media Suite for the NVIDIA DGX Spark</b><br>
 Video with sound · images · music · voices · a director that writes and reviews every shot. Everything runs locally on one Spark.</p>
 
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat" alt="License: MIT"></a>
+  <a href="#built-for-the-dgx-spark"><img src="https://img.shields.io/badge/python-3.12-3776AB?style=flat&logo=python&logoColor=white" alt="Python 3.12"></a>
+  <a href="#built-for-the-dgx-spark"><img src="https://img.shields.io/badge/platform-NVIDIA%20DGX%20Spark-76B900?style=flat&logo=nvidia&logoColor=white" alt="Platform: NVIDIA DGX Spark"></a>
+  <a href="#built-for-the-dgx-spark"><img src="https://img.shields.io/badge/ffmpeg-6.x%2B-007808?style=flat&logo=ffmpeg&logoColor=white" alt="ffmpeg 6.x or newer"></a>
+  <a href="https://github.com/comfyanonymous/ComfyUI"><img src="https://img.shields.io/badge/renderer-ComfyUI-555555?style=flat" alt="Renderer: ComfyUI"></a>
+  <a href="#built-for-the-dgx-spark"><img src="https://img.shields.io/badge/cloud%20APIs-none-success?style=flat" alt="Cloud APIs: none"></a>
+  <a href="https://github.com/sunnychase/lion-ai-studios/commits/main"><img src="https://img.shields.io/github/last-commit/sunnychase/lion-ai-studios?style=flat" alt="Last commit"></a>
+  <a href="https://github.com/sunnychase/lion-ai-studios"><img src="https://img.shields.io/github/stars/sunnychase/lion-ai-studios?style=flat" alt="GitHub stars"></a>
+</p>
+
 <p align="center"><img src="docs/screenshots/desktop-video.png" width="100%" alt="The Video builder"></p>
 
 ## What it does

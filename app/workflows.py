@@ -37,6 +37,7 @@ IMAGE = {
     "Qwen-Image 2512 (fast, best text)":        ["diffusion_models/qwen_image_2512_fp8_e4m3fn.safetensors", "text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors"],
     "Chroma1-HD (FLUX-class)":      ["diffusion_models/Chroma1-HD.safetensors", "text_encoders/t5xxl_fp8_e4m3fn_scaled.safetensors"],
     "HiDream-O1 (best quality)":                ["checkpoints/hidream_o1_image_fp8_scaled.safetensors"],
+    "Juggernaut Z Fast (4 steps)":              ["diffusion_models/Juggernaut_Z_V1_Fast_FP16.safetensors", "text_encoders/qwen_3_4b.safetensors"],
     "Juggernaut Z (Z-Image photoreal finetune)": ["diffusion_models/Juggernaut_Z_V1_by_RunDiffusion_fp16.safetensors", "text_encoders/qwen_3_4b.safetensors"],
     "FLUX.2 klein (fastest)":                   ["diffusion_models/flux-2-klein-4b.safetensors", "text_encoders/qwen_3_4b.safetensors"],
 }

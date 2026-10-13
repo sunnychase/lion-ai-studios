@@ -2,6 +2,14 @@
 
 Updates to Lion AI Studios, newest first. The project has no version numbers; each entry is dated.
 
+## 2026-10-13
+
+- **Juggernaut Z fixed.** It is a fine-tune of Z-Image *Base*, not Turbo, but ran with Turbo settings (8 steps, CFG 1), which gave
+  garbled pictures. It now uses its model card's settings: 35 steps, CFG 6. Slower (about a minute warm), clean output.
+- **Juggernaut Z Fast (4 steps)**, RunDiffusion's fast release, is a new optional image model (12.3 GB, CC BY-NC 4.0) for the
+  Juggernaut look at Turbo speed (4 steps, CFG 1). `scripts/models.json` and docs/MODELS.md list it.
+- The Juggernaut Z row in docs/BENCHMARKS.md was measured at the old settings; it is marked as such until it is re-measured.
+
 ## 2026-10-12 — Benchmarks: every image model, image edit, Ming, voices, Cast
 
 New measurements on one DGX Spark, in [docs/BENCHMARKS.md](docs/BENCHMARKS.md) sections 10–14, with raw rows in `benchmarks/results/` and the scripts in

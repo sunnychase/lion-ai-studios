@@ -239,7 +239,7 @@ Every row was checked: ComfyUI rendered the image node each time and served noth
 (ComfyUI's own time 42.37 / 42.30 s), peak 38.4 GiB in use, 79 °C. Same as section 6 (44.0 s).
 
 ¹ Krea 2 Turbo ran right after Krea 2 Turbo + realism LoRA. They share the model file, so its "cold" load came from a file that had just been read.
-² Juggernaut Z's three pictures came out visibly broken at these settings (garbled lettering and texture). The times are real, but the output was not usable.
+² Juggernaut Z's three pictures came out visibly broken at these settings (garbled lettering and texture). The times are real, but the output was not usable. Cause found on 2026-10-13: Juggernaut Z is a Z-Image *Base* fine-tune and needs its card's 35 steps at CFG 6; the studio now uses those, so this row describes the old settings and will be re-measured.
 
 How to read this:
 - **n = 1 cold and n = 2 warm per model.** Two warm runs are not error bars. They agreed within 2 s here, but that says little about spread on another day.

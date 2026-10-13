@@ -278,6 +278,17 @@
   "group": "image",
   "tier": "optional",
   "dest": "comfy:diffusion_models",
+  "file": "Juggernaut_Z_V1_Fast_FP16.safetensors",
+  "repo": "RunDiffusion/Juggernaut-Z-Image-Fast",
+  "path": "Juggernaut_Z_V1_Fast_FP16.safetensors",
+  "bytes": 12309865944,
+  "license": "cc-by-nc-4.0 (non-commercial)",
+  "what": "Juggernaut Z Fast, 4 steps (non-commercial licence)"
+ },
+ {
+  "group": "image",
+  "tier": "optional",
+  "dest": "comfy:diffusion_models",
   "file": "flux-2-klein-4b.safetensors",
   "repo": "black-forest-labs/FLUX.2-klein-4B",
   "path": "flux-2-klein-4b.safetensors",

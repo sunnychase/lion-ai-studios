@@ -4,7 +4,7 @@ Everything the studio can use, where it goes, and where it comes from. `scripts/
 (`scripts/models.json`) and downloads with resume and size checks. Run `--list` to see it in your terminal.
 
 - **core** (~122 GB): enough for video with sound (all four presets), the two default image models and fast music.
-- **all** (~331 GB): adds the TensorFold checkpoint, the 8-bit decoder, Cast/Recreate, eight more image models, MiniMax Music 3, MIDI and voices.
+- **all** (~343 GB): adds the TensorFold checkpoint, the 8-bit decoder, Cast/Recreate, nine more image models, MiniMax Music 3, MIDI and voices.
 - The director is a separate download (see [DIRECTOR.md](DIRECTOR.md)). Demucs fetches its own small model on first use.
 - Ming-Image 0.1 Design is a separate download too, with its own code and venv (see [MING.md](MING.md)).
 
@@ -49,6 +49,7 @@ what is installed: an image model missing a file is left out of the list.
 | optional | `t5xxl_fp8_e4m3fn_scaled.safetensors` | 5.2 GB | `comfy:text_encoders` | [comfyanonymous/flux_text_encoders](https://huggingface.co/comfyanonymous/flux_text_encoders) | apache-2.0 | text encoder for Chroma |
 | optional | `hidream_o1_image_fp8_scaled.safetensors` | 8.1 GB | `comfy:checkpoints` | [Comfy-Org/HiDream-O1-Image](https://huggingface.co/Comfy-Org/HiDream-O1-Image) | mit | HiDream-O1 (all-in-one checkpoint) |
 | optional | `Juggernaut_Z_V1_by_RunDiffusion_fp16.safetensors` | 12.3 GB | `comfy:diffusion_models` | [RunDiffusion/Juggernaut-Z-Image](https://huggingface.co/RunDiffusion/Juggernaut-Z-Image) | cc-by-nc-4.0 | Juggernaut Z (non-commercial licence) |
+| optional | `Juggernaut_Z_V1_Fast_FP16.safetensors` | 12.3 GB | `comfy:diffusion_models` | [RunDiffusion/Juggernaut-Z-Image-Fast](https://huggingface.co/RunDiffusion/Juggernaut-Z-Image-Fast) | cc-by-nc-4.0 | Juggernaut Z Fast, 4 steps (non-commercial licence) |
 | optional | `flux-2-klein-4b.safetensors` | 7.8 GB | `comfy:diffusion_models` | [black-forest-labs/FLUX.2-klein-4B](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B) | apache-2.0 | FLUX.2 klein 4B |
 | core | `ae.safetensors` | 0.3 GB | `comfy:vae` | [Comfy-Org/z_image_turbo](https://huggingface.co/Comfy-Org/z_image_turbo) | apache-2.0 | VAE for Z-Image, Juggernaut Z, Chroma |
 | optional | `qwen_image_vae.safetensors` | 0.3 GB | `comfy:vae` | [Comfy-Org/Qwen-Image_ComfyUI](https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI) | apache-2.0 | VAE for Qwen-Image 2512 and Krea 2 |

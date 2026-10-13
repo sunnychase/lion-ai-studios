@@ -54,7 +54,7 @@ destination folder and licence. Short version:
 | You want | Download | Size |
 |---|---|---:|
 | Video with sound, all presets | `--group video` core files: MiniMax H3 int8, FastH3 int8, H3 Turbo LoRA, text encoder, video + audio decoders | 67 GB |
-| Images | Z-Image-Turbo and Qwen-Image 2.1 Turbo (core); eight more models are optional | 45 GB core / 168 GB all |
+| Images | Z-Image-Turbo and Qwen-Image 2.1 Turbo (core); nine more models are optional | 45 GB core / 180 GB all |
 | Music | ACE-Step 1.5 Turbo (core); MiniMax Music 3 and the MIDI soundfont are optional | 10 / 22 GB |
 | Voices | Qwen3-TTS 1.7B Base + Whisper large-v3-turbo | 6 GB |
 | Cast / Recreate | MiniMax H3 reference-to-video int8 | 21 GB |
@@ -68,7 +68,7 @@ destination folder and licence. Short version:
 |---|---|
 | **Hardware** | NVIDIA **DGX Spark** (GB10 Grace Blackwell, **128 GB unified memory**, aarch64). Video uses ~55 GB while rendering; the director needs ~19 GB more. Other GB10 machines with 128 GB should work but are untested. |
 | **OS** | DGX OS / Ubuntu 24.04, NVIDIA driver 580+, CUDA 13.0 |
-| **Disk** | ~150 GB for the core models, ~350 GB for everything, plus room for your library. Use the internal NVMe: models must not run off network storage. |
+| **Disk** | ~150 GB for the core models, ~360 GB for everything, plus room for your library. Use the internal NVMe: models must not run off network storage. |
 | **Software** | Python 3.12, `ffmpeg` 6.x or newer (tested 6.1.1, the Ubuntu 24.04 / DGX OS package; 4.4 pads Faithful shots short), `git`, `curl`; Docker only for the TensorFold director recipe |
 | **Renderer** | ComfyUI pinned to commit `b26625f2` (v0.39.0 + 18), PyTorch 2.10 + cu130 |
 
@@ -107,7 +107,7 @@ Everything machine-specific comes from `studio.env` through `app/config.py`.
 | Builder | What you get |
 |---|---|
 | **Video** | **MiniMax H3** makes picture and sound together. Start from text, from scout images, from your own first frame, or from several keyframes that become one film. Films up to **5 minutes** are chained from 15 s segments; every seam carries the previous segment's last frames *and* audio, so cuts are invisible. Four presets: Draft, **Fast HD** (default), Standard, High. |
-| **Image** | Ten image models behind one menu: Z-Image-Turbo, Qwen-Image 2.1 Turbo (2K, best at text), Krea 2, FLUX.2 klein, HiDream-O1, Chroma and more. **Edit** any image by describing the change (Qwen-Image 2.1 Turbo, up to 4 input images). Optional **Ming-Image 0.1 Design** for posters, UI screens and infographics, with a transparent-background option: the director lays out the design with Ming's own rewriter first ([setup](docs/MING.md)). Optional **Fast** engine: Qwen-Image 2.1 Turbo through [LocalRouter](https://github.com/jayleaton/localrouter) at 1024×1024, about 6 s instead of 9 s warm, falling back to ComfyUI on its own ([setup](docs/FAST_IMAGES.md)). |
+| **Image** | Eleven image models behind one menu: Z-Image-Turbo, Qwen-Image 2.1 Turbo (2K, best at text), Krea 2, FLUX.2 klein, HiDream-O1, Chroma and more. **Edit** any image by describing the change (Qwen-Image 2.1 Turbo, up to 4 input images). Optional **Ming-Image 0.1 Design** for posters, UI screens and infographics, with a transparent-background option: the director lays out the design with Ming's own rewriter first ([setup](docs/MING.md)). Optional **Fast** engine: Qwen-Image 2.1 Turbo through [LocalRouter](https://github.com/jayleaton/localrouter) at 1024×1024, about 6 s instead of 9 s warm, falling back to ComfyUI on its own ([setup](docs/FAST_IMAGES.md)). |
 | **Music** | **Fast**: ACE-Step 1.5 Turbo, a minute of music in seconds, with lyrics. **Best**: MiniMax Music 3. **MIDI**: attach a `.mid`, pick an instrument for every part (all 128 General MIDI instruments and 8 drum kits), or describe the sound you want ("jazz trio with brushed drums") and let the **director arrange it**: it picks an instrument or kit for every part, mutes what does not fit, and turns on the AI restyle when instruments alone cannot get there. |
 | **Director** | A vision-language model (Qwen3.8-27B) turns one sentence into a shot prompt with one beat per segment, **watches every rendered segment**, scores it, and re-takes a weak one once. It also picks out the performer in a Short, checks every frame Recreate swaps, and arranges MIDI files from a description. |
 | **Voices** | Clone a voice from a short clip (Qwen3-TTS) for narration or on-camera lines, from the Voices tab or right inside the Video builder's voice-over section. |
@@ -246,7 +246,7 @@ voice. Read [docs/RESPONSIBLE_USE.md](docs/RESPONSIBLE_USE.md).
 
 ```
 app/               the studio: web server (stdlib only), ComfyUI graphs, director, music, MIDI, voice and Ming-Image workers, the page
-comfyui_nodes/     Lion AI Studios image node for ComfyUI (one menu for ten image models)
+comfyui_nodes/     Lion AI Studios image node for ComfyUI (one menu for eleven image models)
 tensorfold/        optional TensorFold engine: setup notes + a small patch
 scripts/           install ComfyUI, download models, helper envs, systemd units, the repository checks (check.sh)
 systemd/           unit templates (studio, ComfyUI, optional director, optional LocalRouter example)

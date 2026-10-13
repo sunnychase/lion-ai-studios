@@ -26,7 +26,8 @@ MODELS = {
     "Z-Image-Turbo (photoreal, best)": {"snap": 16, "steps": 8},   # Tongyi Z-Image-Turbo 6B, Apache-2.0
     "Krea 2 Turbo (photoreal)": {"snap": 16, "steps": 8},
     "Krea 2 Turbo + realism LoRA": {"snap": 16, "steps": 8},
-    "Juggernaut Z (Z-Image photoreal finetune)": {"snap": 16, "steps": 8},
+    "Juggernaut Z Fast (4 steps)": {"snap": 16, "steps": 4},               # RunDiffusion's Fast release: 4 steps, Turbo-style workflow
+    "Juggernaut Z (Z-Image photoreal finetune)": {"snap": 16, "steps": 35},  # a Z-Image BASE fine-tune: its card says 35 steps, CFG 6
     "Chroma1-HD (FLUX-class)": {"snap": 16, "steps": 26},
     # Qwen-Image 2.1 needs ComfyUI >= 0.39 (QwenImage21Cache + TextEncodeQwenImage21); check the Qwen licence before commercial use
     "Qwen-Image 2.1 Turbo (8 steps, 2K, best text)": {"snap": 32, "steps": 8},  # bf16, the checkpoint's own sigmas
@@ -67,6 +68,11 @@ def _load(choice):
             unet = _call("LoraLoaderModelOnly", model=unet, lora_name="Krea2-realism-V2.safetensors", strength_model=0.8)[0]
         clip = _call("CLIPLoader", clip_name="qwen3vl_4b_fp8_scaled.safetensors", type="krea2", device="default")[0]
         vae = _call("VAELoader", vae_name="qwen_image_vae.safetensors")[0]
+    elif choice.startswith("Juggernaut Z Fast"):   # before the full model: same prefix
+        unet = _call("UNETLoader", unet_name="Juggernaut_Z_V1_Fast_FP16.safetensors", weight_dtype="default")[0]
+        unet = _call("ModelSamplingAuraFlow", model=unet, shift=3.0)[0]
+        clip = _call("CLIPLoader", clip_name="qwen_3_4b.safetensors", type="lumina2", device="default")[0]
+        vae = _call("VAELoader", vae_name="ae.safetensors")[0]
     elif choice.startswith("Juggernaut Z"):
         unet = _call("UNETLoader", unet_name="Juggernaut_Z_V1_by_RunDiffusion_fp16.safetensors", weight_dtype="default")[0]
         unet = _call("ModelSamplingAuraFlow", model=unet, shift=3.0)[0]
@@ -156,7 +162,7 @@ class LionStudioImageGen:
                             positive=positive, negative=negative, latent_image=latent, denoise=1.0)[0]
         elif model_name.startswith(("Z-Image", "Qwen", "Krea 2", "Juggernaut Z")):
             latent = _call("EmptySD3LatentImage", width=width, height=height, batch_size=batch_size)[0]
-            samples = _call("KSampler", model=unet, seed=seed, steps=steps, cfg=1.0,
+            samples = _call("KSampler", model=unet, seed=seed, steps=steps, cfg=6.0 if model_name.startswith("Juggernaut Z (") else 1.0,
                             sampler_name="euler", scheduler="simple",
                             positive=positive, negative=negative, latent_image=latent, denoise=1.0)[0]
         elif model_name.startswith("HiDream"):

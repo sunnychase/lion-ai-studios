@@ -233,6 +233,7 @@ voice. Read [docs/RESPONSIBLE_USE.md](docs/RESPONSIBLE_USE.md).
 | [studio.env.example](studio.env.example) | every setting, with comments |
 | [CHANGELOG.md](CHANGELOG.md) | what changed in each update |
 | [NOTICE.md](NOTICE.md) | third-party software, models and fonts |
+| [CONTRIBUTING.md](CONTRIBUTING.md) · [AGENTS.md](AGENTS.md) · [SECURITY.md](SECURITY.md) | development, checks, notes for coding agents, private security reports |
 
 ## Repository
 
@@ -240,7 +241,7 @@ voice. Read [docs/RESPONSIBLE_USE.md](docs/RESPONSIBLE_USE.md).
 app/               the studio: web server (stdlib only), ComfyUI graphs, director, music, MIDI, voice and Ming-Image workers, the page
 comfyui_nodes/     Lion AI Studios image node for ComfyUI (one menu for ten image models)
 tensorfold/        optional TensorFold engine: setup notes + a small patch
-scripts/           install ComfyUI, download models, helper envs, systemd units
+scripts/           install ComfyUI, download models, helper envs, systemd units, the repository checks (check.sh)
 systemd/           unit templates (studio, ComfyUI, optional director, optional LocalRouter example)
 docs/              models, director, Ming-Image, Fast images, benchmarks, responsible use, screenshots
 benchmarks/        raw results and the scripts that produced them
@@ -257,7 +258,9 @@ label AI-generated media. Read [docs/RESPONSIBLE_USE.md](docs/RESPONSIBLE_USE.md
 
 Bug reports and focused pull requests are welcome: [open an issue](https://github.com/sunnychase/lion-ai-studios/issues) or
 [send a pull request](https://github.com/sunnychase/lion-ai-studios/pulls). Keep machine-specific settings in `studio.env`
-(read through `app/config.py`), never in the code.
+(read through `app/config.py`), never in the code. [CONTRIBUTING.md](CONTRIBUTING.md) covers running a development copy and the
+checks (`bash scripts/check.sh`); [AGENTS.md](AGENTS.md) is a short guide for coding agents. Report security problems privately,
+as described in [SECURITY.md](SECURITY.md).
 
 ## License
 

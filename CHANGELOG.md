@@ -2,7 +2,19 @@
 
 Updates to Lion AI Studios, newest first. The project has no version numbers; each entry is dated.
 
-## 2026-10-12 — Ming-Image 0.1 Design, image downloads
+## 2026-10-12 — Ming-Image 0.1 Design, image downloads, narrator cloning
+
+**Video: clone the narrator's voice from a YouTube Short**
+- *Music & voice-over* → *Clone a narrator voice from a YouTube Short*: paste a Shorts link, optionally say whose voice and name
+  it, confirm consent, and press *Clone and use as narrator*. It is the same cloner as the Voices tab (yt-dlp, Demucs, Whisper,
+  the director picks the speaker, Qwen3-TTS). The new voice is selected as narrator at once ("cloning…") and the film can be
+  queued straight away: the queue runs in order, so the voice is made first. The page shows its progress and says if it fails.
+- A film whose narrator voice is missing when its turn comes (the cloning failed, or the voice was deleted) now fails **before**
+  rendering, with a message. It used to fail after the whole film had rendered, when the voice-over was added.
+
+**Fixes**
+- Video: the *Length* picker could not be changed. Every redraw wrote the saved length back into the picker before reading it, so
+  a new choice was overwritten at once. The saved length is now restored only when the picker is first built.
 
 **Library: download images**
 - Image and edit cards now have a *Download* button for every picture (*Download 1…4* when a job made several). The file is

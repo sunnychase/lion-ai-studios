@@ -970,6 +970,9 @@ def worker():
                 if meminfo_gib() < 8: raise RuntimeError(f"only {meminfo_gib():.0f} GiB free — a voice needs ~8 GiB (stop something first)")
                 job.update(status="running", started=now()); GPU["busy"] = job["id"]; save(); run_voice(job)
             else:
+                nv = job["params"].get("voice") if str(job["params"].get("vo") or "").strip() else ""   # a missing narrator voice stops the film before the render
+                if nv and (not re.match(r"^[\w-]+$", str(nv)) or not os.path.exists(f"{VOICES}/{nv}/ref.json")):
+                    raise RuntimeError("the narrator's voice isn't ready — its cloning failed or it was deleted. Pick another narrator (or none) and queue again")
                 wait_gpu(job)
                 if not ensure_comfy(): raise RuntimeError(f"ComfyUI is not answering at {COMFY} (see COMFY_URL / COMFY_SERVICE in studio.env)")
                 job.update(status="running", started=now()); GPU["busy"] = job["id"]; save()

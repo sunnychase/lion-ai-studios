@@ -203,6 +203,14 @@ audio{height:34px}
         <div><div class="lbl">Level</div><select id="vmlevel"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option></select></div></div></div>
     <div id="vobox" class="two" style="margin-top:14px"><div><div class="lbl">Narrator</div><select id="vovoice"><option value="">No voice-over</option></select></div>
       <div><div class="lbl">Narration <span class="dim">— the film's sound dips under it</span></div><textarea id="volines" style="min-height:58px" placeholder="What the narrator says…"></textarea></div></div>
+    <div id="voclone" style="margin-top:10px">
+      <div class="row"><button class="ghost sm" type="button" onclick="$('voform').classList.toggle('hide')">＋ Clone a narrator voice from a YouTube Short</button><span id="vomsg" class="dim" style="font-size:12.5px"></span></div>
+      <div id="voform" class="hide" style="margin-top:10px">
+        <div class="two"><div><div class="lbl">YouTube Shorts link</div><input id="vourl" placeholder="https://youtube.com/shorts/…"></div>
+          <div><div class="lbl">Whose voice <span class="dim">— optional, e.g. “the man on the left”</span></div><input id="vowho"></div></div>
+        <div class="two"><div><div class="lbl">Name <span class="dim">— optional</span></div><input id="volabel" placeholder="Narrator"></div>
+          <div style="align-self:end"><label class="check"><input type="checkbox" id="voconsent"> I have the right to use this person's voice — my own, with their consent, or licensed</label></div></div>
+        <div class="row"><button type="button" onclick="cloneVo()">Clone and use as narrator</button><span class="dim" style="font-size:12.5px">1–3 min · you can queue the film right away — the voice is made first</span></div></div></div>
   </details>
 
   <details class="sec"><summary><span class="n" style="width:24px;height:24px;border-radius:50%;border:1px solid var(--line2);display:grid;place-items:center;font-size:12px;color:var(--mut)">⋯</span><h2>Advanced</h2><p>engine, decoder, director review, seed, exact prompt</p><span class="chev">›</span></summary>
@@ -336,7 +344,7 @@ function _draw(){
  const P=S?S.presets:{};if(!vid&&F.preset=="fasthd")F.preset="draft";
  cards("preset","preset",(vid?["draft","fasthd","standard","high"]:["draft","standard","high"]).map(k=>({k,t:{draft:"Draft",fasthd:"Fast HD",standard:"Standard",high:"High"}[k],
    s:vid?(P[k]?`${P[k].label.split("·").slice(1).join("·")} · 5 s ≈ ${fmtT(Math.round(est(k,5)))}`:""):`${(S&&S.image_preset[k])||""}`})));
- if(!$("len").options.length)$("len").innerHTML=LENS.map(([v,t])=>`<option value="${v}">${t}</option>`).join("");$("len").value=F.len;
+ if(!$("len").options.length){$("len").innerHTML=LENS.map(([v,t])=>`<option value="${v}">${t}</option>`).join("");$("len").value=F.len;}   /* the saved length only when the options are first built */
  if(S&&!$("imodel").options.length){$("imodel").innerHTML=S.image_models.map(m=>`<option>${esc(m)}</option>`).join("");}
  if(S&&!vid&&!F.imodelTouched)$("imodel").value=S.image_preset[F.preset]||S.image_models[0];
  drawEdits();$("engbox").classList.toggle("hide",!vid);if(S){const eo=$("engine").options[0];eo.disabled=!S.tf_ready;$("vae8").disabled=!S.vae8_ready;}
@@ -382,9 +390,22 @@ function jobHtml(j){const p=j.progress||{},pct=p.steps?Math.round(100*((p.seg-1)
   ${rvHtml(j)}${j.error?`<div class="err" style="font-size:12.5px">${esc(j.error)}</div>`:""}</div>`;}
 async function addVoice(){$("verr").textContent="";const [s,j]=await api("/api/voices",{url:$("vurl").value.trim(),who:$("vwho").value.trim(),label:$("vlabel").value.trim(),consent:$("vconsent").checked});
  if(j.error){$("verr").textContent=j.error;return;}$("vurl").value="";tab("queue");load();}
+let VOPEND=LS("studio_vopend",null);   // a narrator voice being cloned from the Video tab: {id, label}; a voice's id is its job id
+async function cloneVo(){$("vomsg").textContent="";const label=$("volabel").value.trim();
+ const [s,j]=await api("/api/voices",{url:$("vourl").value.trim(),who:$("vowho").value.trim(),label,consent:$("voconsent").checked});
+ if(j.error||!j.id){$("vomsg").innerHTML=`<span class=err>${esc(j.error||("HTTP "+s))}</span>`;return;}
+ VOPEND={id:j.id,label:label||"new voice"};SS("studio_vopend",VOPEND);$("vourl").value="";$("voform").classList.add("hide");
+ S.jobs=(S.jobs||[]).concat([j]);drawVoices();$("vovoice").value=VOPEND.id;voState();}
+function voState(){if(!VOPEND||!S)return;const j=(S.jobs||[]).find(x=>x.id==VOPEND.id),have=(S.voices||[]).some(v=>v.id==VOPEND.id);
+ if(have){$("vomsg").textContent=`✓ “${VOPEND.label}” is ready and set as narrator`;VOPEND=null;SS("studio_vopend",null);return;}
+ if(!j||["failed","cancelled","done"].includes(j.status)){const why=j?(j.error||"the voice was not saved"):"its job is gone";
+  if($("vovoice").value==VOPEND.id)$("vovoice").value="";VOPEND=null;SS("studio_vopend",null);drawVoices();
+  $("vomsg").innerHTML=`<span class=err>cloning failed: ${esc(why)} — narrator reset; a film already queued with it will stop before rendering</span>`;return;}
+ $("vomsg").textContent=`cloning “${VOPEND.label}” · ${j.status=="running"?((j.progress||{}).phase||"working"):"queued"}`;}
 async function delVoice(id){if(!confirm("Delete this voice (its reference clip and preview) from the Spark?"))return;await api("/api/voices/delete",{id});load();}
 let VSIG="";function drawVoices(){const V=S.voices||[];$("vn").textContent=V.length;const sig=V.map(v=>v.id).join(",");
- const sel=$("vovoice"),cur=sel.value;if(sel.dataset.sig!=sig){sel.innerHTML=`<option value="">No voice-over</option>`+V.map(v=>`<option value="${esc(v.id)}">${esc(v.label)}</option>`).join("");sel.value=cur;sel.dataset.sig=sig;}
+ const sel=$("vovoice"),cur=sel.value,pend=VOPEND&&!V.some(v=>v.id==VOPEND.id)?VOPEND:null,vsig=sig+(pend?"|"+pend.id:"");   // a voice still being cloned is listed too
+ if(sel.dataset.sig!=vsig){sel.innerHTML=`<option value="">No voice-over</option>`+V.map(v=>`<option value="${esc(v.id)}">${esc(v.label)}</option>`).join("")+(pend?`<option value="${esc(pend.id)}">⏳ ${esc(pend.label)} (cloning…)</option>`:"");sel.value=cur;sel.dataset.sig=vsig;}
  if(sig==VSIG)return;VSIG=sig;
  $("vlist").innerHTML=V.length?V.map(v=>`<div class="job"><div class="row" style="justify-content:space-between"><b>${esc(v.label)}</b><button class="ghost sm" onclick="delVoice('${esc(v.id)}')">Delete</button></div>
   <div class="dim" style="font-size:12.5px;margin:3px 0">from <a href="${esc(v.url)}" target=_blank rel=noopener>${esc(v.title||v.url)}</a>${v.uploader?` · ${esc(v.uploader)}`:""} · ${esc(v.pick.speaker||v.who||"main speaker")} · ${v.pick.start}–${v.pick.end} s · picked by ${esc(v.pick.by)}</div>
@@ -524,7 +545,7 @@ async function load(){try{const r=await fetch("/api/state");S=await r.json();}ca
  $("libf").innerHTML=[["all","All"],["films","Video & films"],["images","Images"],["music","Music"]].map(([k,t])=>`<button class="${LIBF==k?"on":""}" onclick="LIBF='${k}';LIBSIG='';load()">${t} · ${k=="all"?done.length:done.filter(j=>(FK[k]||[]).includes(j.kind)).length}</button>`).join("");
  const sig=LIBF+fl.map(j=>j.id).join(",");if(sig!=LIBSIG){LIBSIG=sig;$("lib").innerHTML=fl.length?fl.map(libHtml).join(""):`<div class="empty">Nothing here yet.</div>`;}
  const ds=S.director||{};$("dirst").textContent=ds.flash?`${ds.writer_label||"the writer"} writes · ${ds.label||"the director"} reviews renders`:ds.director?`director ready · ${ds.label||""}`:"the director starts on first use";
- drawVoices();drawMusic();edPoll();banner();draw();}
+ drawVoices();voState();drawMusic();edPoll();banner();draw();}
 $("imodel").addEventListener("change",()=>{F.imodelTouched=true;draw();});$("icount").addEventListener("change",draw);$("malpha").addEventListener("change",draw);$("mlayout").addEventListener("change",draw);
 {const h=location.hash.slice(1);tab(["video","image","queue","library","voices","music","recreate"].includes(h)?h:h=="create"?F.mode:F.mode||"video");}   /* a link can open a tab: #queue, #library */
 load();setInterval(load,3000);

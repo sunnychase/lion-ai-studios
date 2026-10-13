@@ -263,6 +263,16 @@ Bug reports and focused pull requests are welcome: [open an issue](https://githu
 checks (`bash scripts/check.sh`); [AGENTS.md](AGENTS.md) is a short guide for coding agents. Report security problems privately,
 as described in [SECURITY.md](SECURITY.md).
 
+## Star history
+
+<a href="https://www.star-history.com/#sunnychase/lion-ai-studios&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=sunnychase/lion-ai-studios&type=Date&theme=dark">
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=sunnychase/lion-ai-studios&type=Date">
+    <img alt="Lion AI Studios star history" src="https://api.star-history.com/svg?repos=sunnychase/lion-ai-studios&type=Date" width="600">
+  </picture>
+</a>
+
 ## License
 
 The code in this repository is under the [MIT licence](LICENSE). It builds on ComfyUI, MiniMax H3 and Music 3, FastVideo's

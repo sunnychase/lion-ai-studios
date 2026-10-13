@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """bench_tensorfold_fasth3.py — FastH3 text-to-video on ComfyUI vs on TensorFold's CUDA engine, 5 s clip with sound, same prompt and seed.
 
 Per run: wall time (see benchlib), output size/frames, decoder (fp16 or ComfyUI's 8-bit video decoder) and the GPU temperature at the end.

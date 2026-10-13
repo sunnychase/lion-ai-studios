@@ -1,4 +1,5 @@
 #!/bin/bash
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 # The repository's checks (CI runs the same script): every Python file compiles, the page's inline scripts parse, and no
 # tracked file carries a home-directory path, a private network address or something shaped like a Hugging Face token.
 # Needs python3 and node. Run from anywhere: bash scripts/check.sh [py|js|hygiene]   (no argument = all three)

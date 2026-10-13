@@ -1,3 +1,4 @@
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """workflows.py — ComfyUI API graphs for the studio (ComfyUI 0.39 native MiniMax-H3 nodes + the LionStudioImageGen image node).
 Presets were benchmarked on a DGX Spark (5 s clip with sound): draft 129 s · standard 415 s · high 1,052 s.
 (same 5 s clip, TensorFold engine): draft 76 s (70 s with the 8-bit decoder) · fast HD 192 s (ComfyUI 272 s)."""

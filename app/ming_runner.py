@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """Lion AI Studios — Ming-Image-0.1-Design runner. One process per studio job: load once, render N seeds, save, exit (so all of its
 memory comes back). Runs in Ming's own venv (config.MING_PY), called by studio_server.run_ming():
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """midi_restyle_check.py — how much of a MIDI arrangement survives an ACE-Step "restyle" at different strengths.
 
 Step 1 (render): the MIDI render (a WAV made by app/midi_tool.py, copied into ComfyUI's input folder as bx_midi.wav) is encoded with

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """bench_voice.py — voice cloning and narration with Qwen3-TTS-12Hz-1.7B-Base, through the studio's own voice worker (app/voice.py).
 Run it with the tts venv's python (the one in studio.env's STUDIO_TTS_PY), e.g.  $STUDIO_TTS_PY bench_voice.py
 

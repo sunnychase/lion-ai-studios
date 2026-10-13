@@ -1,3 +1,4 @@
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """bench_graphs.py — the ComfyUI API graphs the video benchmarks used (ComfyUI v0.39 native MiniMax-H3 nodes + the TensorFold node).
 
 This is the benchmark copy of app/workflows.py as it stood when the numbers were taken (2026-10-09/10), plus two switches the app

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """bench_standard_high.py — Standard (H3 + Turbo 8-step) and High (H3 base, 20 steps) on ComfyUI vs an EXPERIMENTAL dense TensorFold path,
 then the shipped Fast HD preset (FastH3 on TensorFold, 1344x768) on the same prompts and seed.
 

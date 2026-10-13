@@ -3,6 +3,7 @@
 <h1 align="center">Lion AI Studios</h1>
 <p align="center"><b>Professional Media Suite for the NVIDIA DGX Spark</b><br>
 Video with sound · images · music · voices · a director that writes and reviews every shot. Everything runs locally on one Spark.</p>
+<p align="center"><em>Created by <a href="https://github.com/sunnychase">Sunny Chase</a> in collaboration with Claude (Anthropic).</em></p>
 
 <p align="center">
   <a href="https://github.com/sunnychase/lion-ai-studios/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/sunnychase/lion-ai-studios/ci.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
@@ -280,6 +281,8 @@ as described in [SECURITY.md](SECURITY.md).
 </a>
 
 ## License
+
+Created by **[Sunny Chase](https://github.com/sunnychase)** in collaboration with **Claude** (Anthropic).
 
 The code in this repository is under the [MIT licence](LICENSE). It builds on ComfyUI, MiniMax H3 and Music 3, FastVideo's
 FastH3, Qwen, ACE-Step, TensorFold and many open models; see [NOTICE.md](NOTICE.md). Each model keeps its own licence, and

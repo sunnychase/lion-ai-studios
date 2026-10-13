@@ -1,4 +1,5 @@
 #!/bin/bash
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 # Installs ComfyUI at the commit Lion AI Studios was tested with, in its own venv, plus the studio's image node.
 # Optional TensorFold engine: see tensorfold/README.md. Safe to re-run.
 set -euo pipefail

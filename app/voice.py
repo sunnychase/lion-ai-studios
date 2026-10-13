@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """voice.py — the studio's voice worker (runs in the tts venv: torch 2.10+cu130, qwen-tts, demucs, transformers Whisper).
   capture URL DIR        Short -> DIR/source.mp4 (<=480p, for the director to watch), source.wav, vocals.wav (Demucs: music removed),
                          transcript.json (Whisper large-v3-turbo, timestamped chunks)

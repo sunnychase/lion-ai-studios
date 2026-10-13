@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """bench_image_conditioning.py — can FastH3 (on ComfyUI and on TensorFold) take a first frame, a first+last frame pair and a guide
 (the previous clip's tail), so image starts, films and keyframe films can leave the slower H3 + Turbo path?
 

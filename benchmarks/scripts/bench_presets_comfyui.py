@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """bench_presets_comfyui.py — baseline: the three MiniMax H3 presets on stock ComfyUI (no TensorFold), one 5 s clip with sound each.
 
 Measures: wall time (POST /prompt -> /history done, polled every 3 s), the per-step time ComfyUI prints at the end of each sampler

@@ -1,3 +1,4 @@
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """studio_broker.py — the studio's memory broker.
 One registry of what holds the Spark's unified memory (ComfyUI, the director, LocalRouter, a Ming process, a voice job), each with its
 need, priority, keep_warm and how it is released. make_room(need_gib, for_what) releases IDLE holders, lowest priority first (keep_warm ones

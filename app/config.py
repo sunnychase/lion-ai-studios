@@ -1,3 +1,4 @@
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """config.py — every machine-specific setting of Lion AI Studios, read from the environment.
 
 Copy studio.env.example to studio.env and edit it; the systemd unit (or `set -a; . ./studio.env`) loads it.

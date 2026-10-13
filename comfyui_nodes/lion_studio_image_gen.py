@@ -1,3 +1,4 @@
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """Lion AI Studios — all-in-one image generator node for ComfyUI.
 
 One `model_name` dropdown covers every supported image model; choosing one switches the whole pipeline (loader, text encoder, VAE,

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """bench_ming.py — Ming-Image 0.1 Design the way the studio runs it (studio_server.run_ming): optional director layout, ComfyUI /free,
 a memory check, then ONE ming_runner.py process per job that loads the model, renders every seed and exits.
 

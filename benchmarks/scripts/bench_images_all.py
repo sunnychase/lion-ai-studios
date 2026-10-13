@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """bench_images_all.py — every image model the studio offers, at the studio's defaults for that model (the image node's own steps,
 sampler and CFG: `steps` = 0), one image per run, through the studio's image node (bench_graphs.image_graph).
 

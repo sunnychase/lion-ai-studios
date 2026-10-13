@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """bench_cast.py — Cast (MiniMax H3 reference-to-video with sound, MiniMax's official recipe: 20 steps, res_multistep, no Turbo LoRA,
 no gate patch; bench_graphs.cast_graph = app/workflows.py's cast_graph), 5 s (124 frames), straight on ComfyUI.
 

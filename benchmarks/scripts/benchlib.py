@@ -1,3 +1,4 @@
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """benchlib.py — shared settings and helpers for the benchmark scripts in this folder.
 
 Everything machine-specific comes from the environment (same names as studio.env):

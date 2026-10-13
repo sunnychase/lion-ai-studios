@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """bench_image_edit.py — the studio's image edit (Qwen-Image 2.1 Turbo, bf16, 8 steps on the checkpoint's own sigmas, euler, CFG 1;
 bench_graphs.edit_graph = app/workflows.py's edit_graph) with 1, 2 and 4 reference images. The output takes the first reference's size,
 which is 1344x768 in every run here.

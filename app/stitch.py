@@ -1,3 +1,4 @@
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """stitch.py — join chained segments into one film. Segment k+1 was rendered with segment k's last GUIDE frames (and their audio) anchored
 at its frame 0, so its first GUIDE frames repeat k's tail: they are dropped, and the sound crossfades over a short window across the seam."""
 import json, os, subprocess

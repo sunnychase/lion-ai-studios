@@ -1,3 +1,4 @@
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """director.py — the studio's director: a vision-language model behind an OpenAI-compatible chat API (config.DIRECTOR_URL).
 It WRITES (one idea -> picture, action, sound, one beat per segment) and REVIEWS (watches each rendered segment and scores it against
 its prompt). It must accept video input ("video_url" content parts), e.g. vLLM serving a Qwen3-VL-class model. If config.WRITER_URL

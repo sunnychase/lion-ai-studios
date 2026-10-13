@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """seam_check.py — is there an audible gap where two segments of a film are joined?
 
 For every finished film in the studio library (job kinds "chain" = guided segments, "keyframes" = keyframe films) it decodes the film's

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """Lion AI Studios — a professional media suite for the NVIDIA DGX Spark: video with sound (MiniMax H3 / FastH3), images (the ComfyUI
 image models), music (ACE-Step 1.5, MiniMax Music 3, MIDI), cloned voices, a director that writes and reviews every shot, and long films
 chained from 15 s segments whose seams carry the previous segment's frames AND sound. Renders run in ComfyUI.

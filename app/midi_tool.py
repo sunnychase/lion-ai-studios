@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """midi_tool.py — the studio's MIDI worker (runs in the midi venv: mido + tinysoundfont, MuseScore General soundfont, MIT).
   inspect FILE              -> JSON: the parts (one per MIDI channel that plays notes), their GM instrument, notes, range, drums; tempo; length
   render FILE OUT MAP.json  -> renders with the user's instruments. MAP: {"parts": {"<ch>": <program 0-127> | "mute" | "kit:<n>"},

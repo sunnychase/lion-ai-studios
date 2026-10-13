@@ -1,4 +1,5 @@
 #!/bin/bash
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 # Creates the studio's two helper Python environments under $STUDIO_HOME/envs (voice: ~6 GB with torch; midi: small)
 # and the studio's folders. The web app itself needs only the system python3 (standard library). Safe to re-run.
 set -euo pipefail

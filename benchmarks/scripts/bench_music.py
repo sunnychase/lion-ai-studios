@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """bench_music.py — the same three briefs on ACE-Step 1.5 Turbo ("fast") and MiniMax Music 3 ("best"), one render each.
 
 Per run: wall time (POST /prompt -> done, polled every 2 s, so a short ACE-Step time can be up to 2 s high), the length asked for and the

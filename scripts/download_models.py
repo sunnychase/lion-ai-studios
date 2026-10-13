@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """download_models.py — fetch the models Lion AI Studios uses (Python standard library + curl; resumable; sizes checked).
 
   python3 scripts/download_models.py --list                      # what exists, sizes, licences

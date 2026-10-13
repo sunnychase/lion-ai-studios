@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """bench_qwen_image.py — Qwen-Image 2.1 Turbo (bf16, 8 steps on the checkpoint's own sigma schedule) vs Qwen-Image 2.1 (int8, 25 steps),
 two prompts (a text-heavy poster and a photographic portrait), seed 77, one image per run, through the studio's image node.
 

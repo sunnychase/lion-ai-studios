@@ -1,4 +1,5 @@
 #!/bin/bash
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 # Installs the systemd --user units for the studio and ComfyUI (paths filled in from studio.env). Safe to re-run.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"

@@ -1,3 +1,4 @@
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """music_graphs.py — the music graphs the benchmark used (ComfyUI v0.39 native nodes; settings from ComfyUI's own templates
 audio_ace_step_1_5_checkpoint.json and audio_minimax_music_3.json). Same as app/music.py's graphs at benchmark time.
   fast  ACE-Step 1.5 Turbo (one 10 GB checkpoint): style tags + lyrics, BPM, key; an LM writes audio codes first, then 8 steps

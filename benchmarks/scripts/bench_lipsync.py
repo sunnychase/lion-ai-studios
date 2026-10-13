@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).
 """bench_lipsync.py — MiniMax H3 reference-to-video speaking a quoted line in a reference voice. Every input is synthetic:
 the face is a Z-Image Turbo render (bx_img1.png from bench_image_conditioning.py) and the voice is the audio of a Draft clip of a
 fictional speaker made here first. No real person's face or voice is used — keep it that way if you change the inputs.

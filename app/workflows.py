@@ -53,7 +53,25 @@ def vae8_ready():
 
 
 def image_models():
-    return [n for n, files in IMAGE.items() if all(os.path.exists(os.path.join(MODELS_DIR, f)) for f in files)]
+    return [n for n, files in IMAGE.items() if all(os.path.exists(os.path.join(MODELS_DIR, f)) for f in files)] + ([MING] if ming_ready() else [])
+
+
+# Ming-Image-0.1-Design runs outside ComfyUI: its own venv + the official inclusionAI/Ming-Image code, one process per job (app/ming_runner.py)
+MING = "Ming-Image 0.1 Design (posters, UI, text, transparent)"
+MING_MODEL, MING_CODE, MING_PY, MING_RUNNER = C.MING_MODEL, C.MING_CODE, C.MING_PY, C.MING_RUNNER
+
+
+def ming_need_gib(w, h):
+    """free memory a Ming job waits for. Measured on a DGX Spark (MemAvailable drop during one run): ~55 GiB peak at 1024x1024,
+    ~70 GiB at 2048x2048 -> about 50 + 5 per megapixel, plus 8 GiB headroom"""
+    return 58 + 5 * int(w) * int(h) / 1048576
+
+
+def ming_ready():
+    """the weights (both halves of the checkpoint), the official code and its venv are all there"""
+    need = (os.path.join(MING_MODEL, "transformer", "config.json"), os.path.join(MING_MODEL, "mllm", "config.json"),
+            os.path.join(MING_CODE, "infer.py"), MING_PY, MING_RUNNER)
+    return all(os.path.exists(p) for p in need)
 
 
 def frames(sec):

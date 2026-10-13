@@ -179,7 +179,11 @@ audio{height:34px}
         <option value="2528x1696">2K 3:2 · 2528×1696</option>
         <option value="1344x768">16:9 · 1344×768</option><option value="768x1344">9:16 · 768×1344</option><option value="1024x1024">1:1 · 1024×1024</option><option value="1152x864">4:3 · 1152×864</option></select></div>
         <div><div class="lbl">Variations</div><select id="icount"><option>1</option><option>2</option><option selected>4</option></select></div></div></div>
-      <div class="dim" style="font-size:12px;margin-top:8px">2K sizes are for Qwen-Image 2.1 Turbo.</div></div>
+      <div class="dim" style="font-size:12px;margin-top:8px">2K sizes are for Qwen-Image 2.1 Turbo.</div>
+      <div id="mingopts" class="hide" style="margin-top:12px"><div style="display:flex;flex-direction:column;gap:6px">
+        <label class="check"><input type="checkbox" id="mlayout" checked> Director lays out the design <span class="dim">— the director turns your words into Ming's layer-by-layer layout (its makers' own rewriter; recommended)</span></label>
+        <label class="check"><input type="checkbox" id="malpha"> Transparent background <span class="dim">— a PNG with an alpha channel, for logos, stickers and cut-outs</span></label>
+        <div class="dim" style="font-size:12px">Ming-Image 0.1 Design: posters, UI screens, infographics and anything with words in it. It loads 53 GB, so ComfyUI's models are unloaded first; the first image takes longer.</div></div></div></div>
   </div>
 
   <details class="sec only-video" id="castsec"><summary><span class="n" style="width:24px;height:24px;border-radius:50%;border:1px solid var(--line2);display:grid;place-items:center;font-size:12px;color:var(--mut)">4</span><h2>Cast</h2><p>a face of your choice, speaking lines in a cloned voice</p><span class="opt">optional</span><span class="chev">›</span></summary>
@@ -320,7 +324,7 @@ function setF(k,v){F[k]=v;SS("studio_form",F);if(k=="start"&&v=="own")$("upl").c
 const LENS=[["5","5 s"],["8","8 s"],["10","10 s"],["15","15 s"],["30","30 s · film"],["45","45 s · film"],["60","1 min · film"],["120","2 min · film"],["180","3 min · film"],["300","5 min · film"]];
 function segs(sec){sec=+sec;if(sec<=15)return [sec];const g=(S?S.guide_frames:22)/24,out=[15];let have=15;while(have+0.5<sec){const n=Math.max(5,Math.min(15,sec-have+g));out.push(n);have+=n-g;}return out;}
 function est(preset,sec){const p0=S&&S.presets[preset];if(!p0)return 0;const p=((F.engine||"tensorfold")=="tensorfold"&&S.tf_ready&&p0.sps5_tf)?{...p0,sps5:p0.sps5_tf}:p0;const fr=n=>{let f=Math.max(5,Math.round(n*24));return f+(5-f%17)%17};return segs(sec).reduce((a,s)=>{const k=fr(s)/124;return a+p.sps5*p.steps*Math.pow(k,1.35)+45*k},0);}
-function draw(){_draw();const vid=F.mode=="video",ed=!vid&&EDITS.length>0;document.body.dataset.mode=F.mode;
+function draw(){_draw();$("mingopts").classList.toggle("hide",F.mode!="image"||EDITS.length>0||!/^Ming-Image/.test($("imodel").value||""));const vid=F.mode=="video",ed=!vid&&EDITS.length>0;document.body.dataset.mode=F.mode;
  $("castsec").classList.toggle("hide",$("castbox").classList.contains("hide"));
  $("scene-h").textContent=vid?"Scene":ed?"The change":"The image";$("scene-p").textContent=vid?"who and what is in frame, what happens, what we hear":ed?"say what to change — everything else stays":"subject, place, light, style";
  $("pic-lbl").textContent=vid?"The picture — subject, place, light":ed?"What to change":"Describe the image";$("fmt-p").textContent=vid?"quality and length":"quality, model, size and variations";
@@ -344,7 +348,7 @@ function _draw(){
  if(keys){const g=+$("gap").value,n=Math.max(0,KEYS.length-1);$("summary").innerHTML=n?`${KEYS.length} images → ${n} clips of ${g} s → one ${Math.round(n*g)} s film · ≈ <b>${fmtT(Math.round(n*est(F.preset,g)))}</b> on the Spark <span class=dim>(estimate)</span>`:`add at least 2 images`;return;}
  $("revbox").classList.toggle("hide",!vid);$("vobox").classList.toggle("hide",!vid);$("musbox").classList.toggle("hide",!vid);$("castbox").classList.toggle("hide",!vid||F.start=="keys"||(S&&!S.cast_ready));drawCast();
  $("summary").innerHTML=vid?`${F.start=="scout"?"Step 1 makes 4 scout images · ":""}${sec>15?`${sg.length} segments of up to 15 s, joined seamlessly · `:""}≈ <b>${fmtT(Math.round(est(F.preset,sec)))}</b> on the Spark <span class=dim>(estimate)</span>`
-   :`${$("icount").value} image(s) · ${esc($("imodel").value||"")}`;}
+   :`${$("icount").value} image(s) · ${esc($("imodel").value||"")}${/^Ming-Image/.test($("imodel").value||"")?($("malpha").checked?" · transparent":"")+($("mlayout").checked?" · director layout":""):""}`;}
 function drawKeys(){$("keys").innerHTML=KEYS.map((k,i)=>`${i?'<span class="arrow">→</span>':""}<div class="key"><span class="n">${i+1}</span><img src="/files/${esc(k)}">
   <button class="ghost" onclick="mvKey(${i},-1)" ${i?"":"disabled"}>←</button><button class="ghost" onclick="mvKey(${i},1)" ${i<KEYS.length-1?"":"disabled"}>→</button><button class="ghost" onclick="rmKey(${i})">×</button></div>`).join("")||`<span class="dim">no images yet</span>`;}
 function mvKey(i,d){const j=i+d;[KEYS[i],KEYS[j]]=[KEYS[j],KEYS[i]];SS("studio_keys",KEYS);draw();}
@@ -364,7 +368,7 @@ function clearFirst(){FIRST=null;if(F.start=="own")F.start="text";draw();}
 async function upload(inp){const f=inp.files[0];if(!f)return;const r=await fetch("/api/upload",{method:"POST",headers:{"Content-Type":f.type,"X-Studio":"1"},body:f});const j=await r.json();
  if(j.error){alert(j.error);return;}FIRST=j.file;F.start="own";draw();inp.value="";}
 function body(){const [w,h]=$("ishape").value.split("x");if(F.mode=="image"&&EDITS.length)return {mode:"edit",images:EDITS,picture:$("picture").value,count:+$("icount").value,seed:$("seed").value.trim(),preset:F.preset};return {mode:F.mode=="video"&&F.start=="keys"?"keyframes":F.mode=="image"||F.start=="scout"&&!FIRST?"image":"video",images:KEYS,gap:+$("gap").value,preset:F.preset,seconds:+$("len").value,seed:$("seed").value.trim(),
-  picture:$("picture").value,action:$("action").value,sound:$("sound").value,beats:(F.start=="keys"||+$("len").value>15)?$("beats").value:"",model:F.mode=="video"?(S.image_preset[F.preset]||$("imodel").value):$("imodel").value,w,h,count:F.start=="scout"&&F.mode=="video"?4:+$("icount").value,
+  picture:$("picture").value,action:$("action").value,sound:$("sound").value,beats:(F.start=="keys"||+$("len").value>15)?$("beats").value:"",model:F.mode=="video"?(S.image_preset[F.preset]||$("imodel").value):$("imodel").value,layout:$("mlayout").checked,alpha:$("malpha").checked,w,h,count:F.start=="scout"&&F.mode=="video"?4:+$("icount").value,
   first_image:FIRST||"",review:$("review").value,engine:$("engine").value,vae8:$("vae8").checked,voice:$("vovoice").value,vo:$("volines").value,music:$("vmusic").value,music_style:$("vmstyle").value,music_level:$("vmlevel").value,cast_images:F.start=="keys"?[]:CAST,cast_consent:$("castok").checked,cast_voice:F.start=="keys"?"":$("castvoice").value,cast_lines:$("castlines").value,prompt:!$("reviewbox").classList.contains("hide")?$("prompt").value:""};}
 function review(){const p=[$("picture").value.trim(),$("action").value.trim(),$("sound").value.trim()?"Sound: "+$("sound").value.trim():""].filter(Boolean).join("\n\n");$("prompt").value=p;$("reviewbox").classList.remove("hide");}
 async function queue(){$("cerr").textContent="";const b=body();if(!b.picture.trim()&&!b.prompt.trim()){$("cerr").textContent="Write what the picture shows first.";return;}
@@ -521,7 +525,7 @@ async function load(){try{const r=await fetch("/api/state");S=await r.json();}ca
  const sig=LIBF+fl.map(j=>j.id).join(",");if(sig!=LIBSIG){LIBSIG=sig;$("lib").innerHTML=fl.length?fl.map(libHtml).join(""):`<div class="empty">Nothing here yet.</div>`;}
  const ds=S.director||{};$("dirst").textContent=ds.flash?`${ds.writer_label||"the writer"} writes · ${ds.label||"the director"} reviews renders`:ds.director?`director ready · ${ds.label||""}`:"the director starts on first use";
  drawVoices();drawMusic();edPoll();banner();draw();}
-$("imodel").addEventListener("change",()=>{F.imodelTouched=true;draw();});$("icount").addEventListener("change",draw);
+$("imodel").addEventListener("change",()=>{F.imodelTouched=true;draw();});$("icount").addEventListener("change",draw);$("malpha").addEventListener("change",draw);$("mlayout").addEventListener("change",draw);
 {const h=location.hash.slice(1);tab(["video","image","queue","library","voices","music","recreate"].includes(h)?h:h=="create"?F.mode:F.mode||"video");}   /* a link can open a tab: #queue, #library */
 load();setInterval(load,3000);
 </script>

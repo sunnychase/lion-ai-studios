@@ -11,7 +11,7 @@ Video with sound · images · music · voices · a director that writes and revi
 | Builder | What you get |
 |---|---|
 | **Video** | **MiniMax H3** makes picture and sound together. Start from text, from scout images, from your own first frame, or from several keyframes that become one film. Films up to **5 minutes** are chained from 15 s segments; every seam carries the previous segment's last frames *and* audio, so cuts are invisible. Four presets: Draft, **Fast HD** (default), Standard, High. |
-| **Image** | Ten image models behind one menu: Z-Image-Turbo, Qwen-Image 2.1 Turbo (2K, best at text), Krea 2, FLUX.2 klein, HiDream-O1, Chroma and more. **Edit** any image by describing the change (Qwen-Image 2.1 Turbo, up to 4 input images). |
+| **Image** | Ten image models behind one menu: Z-Image-Turbo, Qwen-Image 2.1 Turbo (2K, best at text), Krea 2, FLUX.2 klein, HiDream-O1, Chroma and more. **Edit** any image by describing the change (Qwen-Image 2.1 Turbo, up to 4 input images). Optional **Ming-Image 0.1 Design** for posters, UI screens and infographics, with a transparent-background option: the director lays out the design with Ming's own rewriter first ([setup](docs/MING.md)). |
 | **Music** | **Fast**: ACE-Step 1.5 Turbo, a minute of music in seconds, with lyrics. **Best**: MiniMax Music 3. **MIDI**: attach a `.mid`, pick an instrument for every part (all 128 General MIDI instruments and 8 drum kits), or describe the sound you want ("jazz trio with brushed drums") and let the **director arrange it**: it picks an instrument or kit for every part, mutes what does not fit, and turns on the AI restyle when instruments alone cannot get there. |
 | **Director** | A vision-language model (Qwen3.8-27B) turns one sentence into a shot prompt with one beat per segment, **watches every rendered segment**, scores it, and re-takes a weak one once. It also picks out the performer in a Short, checks every frame Recreate swaps, and arranges MIDI files from a description. |
 | **Voices** | Clone a voice from a short clip (Qwen3-TTS) for narration or on-camera lines. |
@@ -62,7 +62,7 @@ python3 scripts/download_models.py          # core models, ~122 GB (--list to se
 ```
 
 Then set up the director ([docs/DIRECTOR.md](docs/DIRECTOR.md)) and, optionally, the TensorFold engine
-([tensorfold/README.md](tensorfold/README.md)). The web app itself is a single Python file that uses only the standard
+([tensorfold/README.md](tensorfold/README.md)) and Ming-Image ([docs/MING.md](docs/MING.md)). The web app itself is a single Python file that uses only the standard
 library. It starts ComfyUI when the first render needs it.
 
 PyTorch may warn that the GB10 (compute capability 12.1) is newer than the range it was built for (up to 12.0). That warning
@@ -80,6 +80,7 @@ destination folder and licence. Short version:
 | Cast / Recreate | MiniMax H3 reference-to-video int8 | 21 GB |
 | TensorFold engine | FastH3 bf16 | 44 GB |
 | Director | Qwen3.8-27B, 4-bit (via its own recipe) | ~20 GB |
+| Ming-Image 0.1 Design (optional) | `inclusionAI/Ming-Image-0.1-Design` + the official code and its own venv ([docs/MING.md](docs/MING.md)) | 53 GB |
 
 ## Configuration
 
@@ -117,12 +118,12 @@ Full tables, methods and limitations are in [docs/BENCHMARKS.md](docs/BENCHMARKS
 ## Repository
 
 ```
-app/               the studio: web server (stdlib only), ComfyUI graphs, director, music, MIDI and voice workers, the page
+app/               the studio: web server (stdlib only), ComfyUI graphs, director, music, MIDI, voice and Ming-Image workers, the page
 comfyui_nodes/     Lion AI Studios image node for ComfyUI (one menu for ten image models)
 tensorfold/        optional TensorFold engine: setup notes + a small patch
 scripts/           install ComfyUI, download models, helper envs, systemd units
 systemd/           unit templates (studio, ComfyUI, optional director)
-docs/              models, director, benchmarks, responsible use, screenshots
+docs/              models, director, Ming-Image, benchmarks, responsible use, screenshots
 benchmarks/        raw results and the scripts that produced them
 samples/           example videos, images and music made with the studio
 CHANGELOG.md       what changed in each update

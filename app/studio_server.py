@@ -156,6 +156,8 @@ def new_job(kind, params):
     elif kind == "music": est = MU.estimate_s(params["engine"], params["seconds"])
     elif kind == "retake": est = W.estimate_s(params["preset"], params["seconds"], params.get("engine", "comfy")) + 20
     elif kind == "export": est = 30
+    elif kind == "image" and params.get("model") == W.MING:     # measured on a DGX Spark: load 309-363 s, ~22 s per image at 1 MP, ~122 s at 4 MP
+        est = round(340 + 30 * params["w"] * params["h"] / 1048576 * params.get("count", 1) + (60 if params.get("layout") else 0))
     elif kind == "recreate": est = W.cast_estimate_s(params["preset"], params["max_seconds"]) + 60 + 25 * math.ceil(params["max_seconds"] / 5)
     j = {"id": jid, "kind": kind, "status": "queued", "created": now(), "params": params, "progress": {"seg": 0, "segs": len(segs) if kind != "image" else 1,
          "step": 0, "steps": 0, "phase": "queued"}, "outputs": [], "error": "", "est_s": est}
@@ -901,8 +903,50 @@ def run_edit(job):
         if f.startswith(f"studio_{job['id']}_"): os.remove(os.path.join(COMFY_IN, f))
 
 
+def run_ming(job):
+    """Ming-Image: the director's layout (optional) -> ComfyUI /free -> memory check (stop the director if still short) -> one Ming process"""
+    p = job["params"]; d = f"{LIB}/{job['id']}"; os.makedirs(d, exist_ok=True); notes = []
+    prompt = p["prompt"]
+    if not prompt: raise RuntimeError("describe the design first")
+    if p.get("layout"):
+        job["progress"].update(phase="the director is laying out the design (Ming's own rewriter)"); save()
+        try:
+            prompt, secs = DIR.ming_layout(p["prompt"], p["w"], p["h"]); notes.append(f"director layout in {secs} s")
+            open(f"{d}/ming_layout.json", "w").write(prompt)
+        except Exception as e:
+            notes.append(f"director layout failed ({str(e)[:120]}) — your words were used as written"); prompt = p["prompt"]
+    if p.get("alpha"): prompt = "RGBA, 4-channel, transparent background\n" + prompt         # one of Ming's fixed RGBA phrases, at the very start
+    open(f"{d}/ming_prompt.txt", "w").write(prompt)
+    need = W.ming_need_gib(p["w"], p["h"]); mem = [f"free {meminfo_gib():.0f} GiB before (needs {need:.0f})"]
+    job["progress"].update(phase="making room: ComfyUI unloads its models"); save()
+    try:
+        urllib.request.urlopen(urllib.request.Request(f"{COMFY}/free", data=json.dumps({"unload_models": True, "free_memory": True}).encode(),
+                                                      headers={"Content-Type": "application/json"}), timeout=60).read(); time.sleep(4)
+    except Exception: pass
+    mem.append(f"{meminfo_gib():.0f} GiB after ComfyUI /free")
+    if meminfo_gib() < need and C.DIRECTOR_SERVICE and DIR.status().get("director"):
+        DIR.stop(); time.sleep(8); mem.append(f"{meminfo_gib():.0f} GiB after pausing the director")
+        notes.append("the director was paused to make room (it restarts on its own when needed)")
+    notes.append(" → ".join(mem))
+    if meminfo_gib() < need:
+        raise RuntimeError(f"Ming needs about {need:.0f} GiB free at {p['w']}x{p['h']} and only {meminfo_gib():.0f} GiB is — pick a smaller size, or stop another GPU service first")
+    seeds = ",".join(str(int(p["seed"]) + i) for i in range(p["count"]))
+    job["progress"].update(phase=f"Ming-Image · loading 53 GB (~6 min), then {p['count']} image(s)"); save()
+    r = subprocess.run([W.MING_PY, W.MING_RUNNER, "--prompt-file", f"{d}/ming_prompt.txt", "--width", str(p["w"]), "--height", str(p["h"]),
+                        "--seeds", seeds, "--out", f"{d}/ming_raw", "--model", W.MING_MODEL, "--code", W.MING_CODE],
+                       capture_output=True, text=True, timeout=3600)
+    lines = [l for l in r.stdout.splitlines() if l.startswith("{")]
+    if r.returncode or not lines: raise RuntimeError("Ming-Image failed: " + (r.stderr or r.stdout)[-400:])
+    res = json.loads(lines[-1])
+    for i, f in enumerate(res["outputs"]):
+        dst = f"{d}/img{i + 1:02d}.png"; shutil.move(f, dst); job["outputs"].append({"file": os.path.basename(dst), "kind": "image"})
+    notes.append(f"Ming load {res.get('load_s')} s · per image {res.get('gen_s')} s · torch {res.get('torch')} · transformers {res.get('transformers')}")
+    job["notes"] = " · ".join(notes); save()
+
+
 def run_image(job):
     p = job["params"]; d = f"{LIB}/{job['id']}"; os.makedirs(d, exist_ok=True)
+    if p.get("model") == W.MING: return run_ming(job)                                       # Ming runs outside ComfyUI
     job["progress"].update(phase=f"{p['model']} · {p['count']} image(s)"); save()
     pid = comfy_post(W.image_graph(p["model"], p["prompt"], p["w"], p["h"], p["count"], p["seed"], f"studio/{job['id']}_img", p.get("negative", "")))
     files = [f for f in comfy_wait(pid, job) if f.lower().endswith((".png", ".jpg", ".webp")) and os.path.basename(f).startswith(f"{job['id']}_img")]
@@ -1060,7 +1104,8 @@ def mk_params(b):
         if model not in W.image_models(): raise ValueError(f"image model not installed: {model}")
         w, h = int(b.get("w") or 1344), int(b.get("h") or 768)
         return "image", {"model": model, "prompt": b.get("picture", "").strip(), "negative": b.get("negative", ""), "w": w, "h": h,
-                         "count": max(1, min(4, int(b.get("count") or 1))), "seed": seed, "preset": preset}
+                         "count": max(1, min(4, int(b.get("count") or 1))), "seed": seed, "preset": preset,
+                         "layout": b.get("layout") is not False, "alpha": bool(b.get("alpha"))}   # layout / alpha: Ming-only options
     if mode == "keyframes":
         ims = b.get("images") or []
         if not isinstance(ims, list) or not 2 <= len(ims) <= 12: raise ValueError("pick 2 to 12 images, in order")

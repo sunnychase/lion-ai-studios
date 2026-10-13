@@ -2,6 +2,22 @@
 
 Updates to Lion AI Studios, newest first. The project has no version numbers; each entry is dated.
 
+## 2026-10-12 — Ming-Image 0.1 Design
+
+**Images: Ming-Image 0.1 Design (optional)**
+- inclusionAI's Ming-Image-0.1-Design (MIT, 6B) joins the Image menu for posters, UI screens, infographics and other text-heavy
+  designs. It runs outside ComfyUI: one process per job in its own venv (`app/ming_runner.py`, the official inclusionAI/Ming-Image
+  code unchanged) that loads the model, renders every variation and exits. Setup: [docs/MING.md](docs/MING.md).
+- *Director lays out the design* (on by default) runs Ming's own released text-to-image rewriter prompt on the director
+  (`director.ming_layout`) and sets the layout's aspect ratio to the chosen canvas. If the director does not answer, your words are
+  used as written.
+- *Transparent background* starts the prompt with Ming's fixed `RGBA, 4-channel, transparent background` phrase; the PNG keeps
+  its alpha channel.
+- Before it loads, ComfyUI unloads its models. The job needs about 58 GiB + 5 GiB per megapixel free (`workflows.ming_need_gib`);
+  if memory is still short and the studio manages the director, the director is stopped, and otherwise the job fails with a message.
+- New settings: `MING_MODEL`, `MING_CODE`, `MING_PY` (and `MING_RUNNER`). The model is listed only when all of them exist.
+- Measured on one DGX Spark: 309–363 s to load, 21–23 s per 1024×1024 image, 122 s at 2048×2048.
+
 ## 2026-10-11 — Faithful Recreate, MIDI arranging
 
 **Recreate a Short: Faithful style (now the default)**

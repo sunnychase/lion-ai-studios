@@ -9,6 +9,9 @@ under its own terms.
   `tensorfold/one-engine-resident.patch` modifies its `__init__.py`.
 - **TensorFold engine** ([drowzeys/TensorFold](https://github.com/drowzeys/TensorFold), MIT). Not redistributed.
 - **Director recipe** ([MiaAI-Lab/Qwen3.8-27B-DGX-Spark-TensorFold](https://github.com/MiaAI-Lab/Qwen3.8-27B-DGX-Spark-TensorFold)). Not redistributed.
+- **Ming-Image** ([inclusionAI/Ming-Image](https://github.com/inclusionAI/Ming-Image), weights
+  [inclusionAI/Ming-Image-0.1-Design](https://huggingface.co/inclusionAI/Ming-Image-0.1-Design), MIT). Not redistributed;
+  `app/ming_runner.py` imports its `infer.py` unchanged, and the director uses its released rewriter prompt from that checkout.
 - **Python packages**: mido, tinysoundfont, qwen-tts, demucs, transformers, accelerate, soundfile, yt-dlp, PyTorch, each under its own licence.
 - **MuseScore General soundfont** (MIT).
 - **Models**: see [docs/MODELS.md](docs/MODELS.md). Several restrict commercial use.

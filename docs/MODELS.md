@@ -6,6 +6,7 @@ Everything the studio can use, where it goes, and where it comes from. `scripts/
 - **core** (~122 GB): enough for video with sound (all four presets), the two default image models and fast music.
 - **all** (~331 GB): adds the TensorFold checkpoint, the 8-bit decoder, Cast/Recreate, eight more image models, MiniMax Music 3, MIDI and voices.
 - The director is a separate download (see [DIRECTOR.md](DIRECTOR.md)). Demucs fetches its own small model on first use.
+- Ming-Image 0.1 Design is a separate download too, with its own code and venv (see [MING.md](MING.md)).
 
 `comfy:<folder>` means `$COMFY_MODELS/<folder>/` and `studio:<folder>` means `$STUDIO_HOME/models/<folder>/`. The studio only offers
 what is installed: an image model missing a file is left out of the list.
@@ -69,6 +70,14 @@ what is installed: an image model missing a file is left out of the list.
 |---|---|---:|---|---|---|---|
 | optional | `whole repo` | 4.6 GB | `studio:Qwen3-TTS-12Hz-1.7B-Base` | [Qwen/Qwen3-TTS-12Hz-1.7B-Base](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base) | apache-2.0 | Qwen3-TTS voice cloning (whole repo) |
 | optional | `whole repo` | 1.7 GB | `studio:whisper-large-v3-turbo` | [openai/whisper-large-v3-turbo](https://huggingface.co/openai/whisper-large-v3-turbo) | mit | Whisper transcription (whole repo) |
+
+## Ming-Image (optional, outside ComfyUI)
+
+| weights | size | goes to | licence | used for |
+|---|---:|---|---|---|
+| [inclusionAI/Ming-Image-0.1-Design](https://huggingface.co/inclusionAI/Ming-Image-0.1-Design) (whole repo) | 52.9 GB | `MING_MODEL` (default `studio:Ming-Image-0.1-Design`) | MIT | posters, UI, infographics, text, transparent PNGs |
+
+Setup, the code checkout and the venv: [MING.md](MING.md).
 
 ## Director
 

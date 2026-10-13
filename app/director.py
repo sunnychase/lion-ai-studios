@@ -266,3 +266,19 @@ def midi_arrange(parts, request, bpm, seconds, gm_names, kit_names):
             '"notes": "one sentence on the choices"}'}]
     d = _ask(DIRECTOR, C.DIRECTOR_MODEL, msg, max_tokens=700, temperature=0.3)
     return d
+
+
+# Ming-Image layout ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+def ming_layout(request, width, height):
+    """Ming-Image's own released text-to-image rewriter (a Figma-style JSON layout, layer by layer) run on the director.
+    Returns (layout_json_text, seconds). aspect_ratio is forced to the chosen canvas, as Ming's makers ask."""
+    from math import gcd
+    rewriter = os.path.join(C.MING_CODE, "assets", "t2i_rewriter_system_prompt.txt")
+    if not ensure(): raise RuntimeError(f"the director did not answer at {DIRECTOR} — is the server running? (see DIRECTOR_URL in studio.env)")
+    g = gcd(int(width), int(height)); ar = f"{int(width) // g}:{int(height) // g}"
+    msg = [{"role": "system", "content": open(rewriter).read()},
+           {"role": "user", "content": f"{request}\n\nCanvas: {int(width)}x{int(height)} pixels, aspect_ratio {ar}."}]
+    t = time.time(); d = _ask(DIRECTOR, C.DIRECTOR_MODEL, msg, max_tokens=3000, temperature=0.3)
+    if not isinstance(d, dict) or "layers" not in d: raise ValueError("the director's layout had no layers")
+    d.setdefault("canvas_settings", {})["aspect_ratio"] = ar
+    return json.dumps(d, ensure_ascii=False), round(time.time() - t, 1)

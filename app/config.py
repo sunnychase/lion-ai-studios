@@ -49,3 +49,10 @@ TTS_PY = _p(E("STUDIO_TTS_PY", os.path.join(STUDIO_HOME, "envs/tts/bin/python"))
 MIDI_PY = _p(E("STUDIO_MIDI_PY", os.path.join(STUDIO_HOME, "envs/midi/bin/python")))  # mido + tinysoundfont
 SF2 = _p(E("STUDIO_SF2", os.path.join(MODELS, "soundfonts/MuseScore_General.sf2")))
 TF_LIB = _p(E("TENSORFOLD_LIB", os.path.join(COMFY_DIR, "custom_nodes/tensorfold_h3/libtf_h3.so")))  # optional engine
+
+# ── optional: Ming-Image-0.1-Design (runs outside ComfyUI, in its own venv; see docs/MING.md) ──────────────────────────────────
+# The Image menu lists it only when the weights, the official code and the venv are all found.
+MING_MODEL = _p(E("MING_MODEL", os.path.join(MODELS, "Ming-Image-0.1-Design")))   # huggingface.co/inclusionAI/Ming-Image-0.1-Design
+MING_CODE = _p(E("MING_CODE", os.path.join(STUDIO_HOME, "ming/Ming-Image")))      # a checkout of github.com/inclusionAI/Ming-Image
+MING_PY = _p(E("MING_PY", os.path.join(STUDIO_HOME, "envs/ming/bin/python")))     # the venv that runs it (torch + Ming's pins)
+MING_RUNNER = _p(E("MING_RUNNER", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ming_runner.py")))

@@ -19,7 +19,9 @@ It is **off by default**. Nothing changes until you set `LOCALROUTER_ENABLE=1` i
 - **It starts on demand and stops when idle.** For a Fast job the studio starts LocalRouter (`LOCALROUTER_SERVICE` or
   `LOCALROUTER_START`) and waits up to about 90 s for its `/health`. LocalRouter's own `idle_ttl_s` unloads the model after
   5 minutes, and the studio stops LocalRouter after **10 minutes** without a Fast job (`LOCALROUTER_IDLE_S`). It never stops
-  it while a Fast job runs or is queued, or while LocalRouter reports a model loading or busy.
+  it while a Fast job runs or is queued, or while LocalRouter reports a model loading or busy. With `LOCALROUTER_SERVICE` or
+  `LOCALROUTER_STOP` set, the idle stop applies to any LocalRouter it finds running, including one you started by hand under
+  the same unit name. Set `LOCALROUTER_IDLE_S=0` to keep it running.
 - **It gives way.** Before any other job (video, ComfyUI images, Ming, voices) a warm LocalRouter unloads its model
   through its own `POST /v1/tools/release`, so it does not hold about 36 GiB under a render.
 

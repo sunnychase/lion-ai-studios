@@ -1,0 +1,63 @@
+name: Feature request
+description: Suggest one focused improvement
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One idea per request, please. For a large change (a new builder or engine), describe the problem first so the
+        approach can be agreed before anyone builds it.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you file
+      options:
+        - label: I searched the open and closed issues and pull requests for the same idea.
+          required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Video / films
+        - Image / edit
+        - Music / MIDI
+        - Voices
+        - Cast / Recreate a Short
+        - Editor
+        - Library / Queue
+        - The director
+        - Install, models or services
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What is hard or impossible today, and when do you run into it?
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you would like
+      description: What the studio should do, and how you would know it works.
+    validations:
+      required: true
+
+  - type: textarea
+    id: limits
+    attributes:
+      label: Constraints
+      description: Models, licences, memory or time on the Spark, or anything that should stay out of scope. The studio runs locally on one Spark with no cloud APIs.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered

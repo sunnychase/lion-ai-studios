@@ -43,7 +43,7 @@ and helpers can be called directly with a throw-away `STUDIO_HOME`.
 
 ## Checks
 
-Run before every commit (CI runs the same script on every push and pull request):
+Run before every commit. CI (`.github/workflows/ci.yml`) runs the same script on every push and pull request:
 
 ```bash
 bash scripts/check.sh

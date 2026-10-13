@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: compile, page scripts, hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: python -m py_compile on every .py
+        run: bash scripts/check.sh py
+      - name: node --check on the inline scripts of app/index.html
+        run: bash scripts/check.sh js
+      - name: no home paths, private addresses or token-shaped strings
+        run: bash scripts/check.sh hygiene

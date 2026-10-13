@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/sunnychase/lion-ai-studios#documentation
+    about: Setup, models, the director, the optional engines, benchmarks and the FAQ.
+  - name: Report a security problem privately
+    url: https://github.com/sunnychase/lion-ai-studios/security/policy
+    about: Please do not open a public issue for security problems.

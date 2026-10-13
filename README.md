@@ -5,6 +5,7 @@
 Video with sound · images · music · voices · a director that writes and reviews every shot. Everything runs locally on one Spark.</p>
 
 <p align="center">
+  <a href="https://github.com/sunnychase/lion-ai-studios/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/sunnychase/lion-ai-studios/ci.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License: MIT"></a>
   <a href="#requirements"><img src="https://img.shields.io/badge/python-3.12-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.12"></a>
   <a href="#requirements"><img src="https://img.shields.io/badge/platform-NVIDIA%20DGX%20Spark-76B900?style=flat-square&logo=nvidia&logoColor=white" alt="Platform: NVIDIA DGX Spark"></a>

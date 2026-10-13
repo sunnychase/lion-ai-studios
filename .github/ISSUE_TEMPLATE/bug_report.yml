@@ -1,0 +1,95 @@
+name: Bug report
+description: Something in the studio does not work as described
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One problem per report, please. Remove personal paths, addresses, tokens and private media from anything you paste.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you file
+      options:
+        - label: I searched the open and closed issues for the same problem.
+          required: true
+        - label: I removed personal paths, addresses, tokens and private media from this report.
+          required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Video / films
+        - Image / edit
+        - Ming-Image
+        - Fast images (LocalRouter)
+        - Music / MIDI
+        - Voices
+        - Cast / Recreate a Short
+        - Editor
+        - Library / Queue
+        - The director
+        - Install, models or services
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you saw, and the job's error or notes if there are any.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the Video builder
+        2. Choose ...
+        3. Queue it and ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+
+  - type: input
+    id: commit
+    attributes:
+      label: Commit
+      description: "`git -C lion-ai-studios rev-parse --short HEAD`"
+    validations:
+      required: true
+
+  - type: textarea
+    id: setup
+    attributes:
+      label: Machine and software
+      description: Hardware, OS, NVIDIA driver, ffmpeg version, ComfyUI commit, the director you use, and any optional engine (TensorFold, Ming-Image, LocalRouter).
+      placeholder: DGX Spark, DGX OS (Ubuntu 24.04), driver 580, ffmpeg 6.1.1, ComfyUI b26625f2, director via vLLM
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: "The smallest useful part of `journalctl --user -u lion-studio` or the ComfyUI log."
+      render: text
+
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: Screenshots, the preset and length, the model, or what you already tried.

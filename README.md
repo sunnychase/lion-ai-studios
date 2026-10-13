@@ -14,6 +14,7 @@ Video with sound · images · music · voices · a director that writes and revi
   <a href="#faq"><img src="https://img.shields.io/badge/cloud%20APIs-none-success?style=flat-square" alt="Cloud APIs: none"></a>
   <a href="https://github.com/sunnychase/lion-ai-studios/commits/main"><img src="https://img.shields.io/github/last-commit/sunnychase/lion-ai-studios?style=flat-square" alt="Last commit"></a>
   <a href="https://github.com/sunnychase/lion-ai-studios"><img src="https://img.shields.io/github/stars/sunnychase/lion-ai-studios?style=flat-square" alt="GitHub stars"></a>
+  <a href="https://donate.stripe.com/fZuaER2Cbecw7cQ6PlfEk00"><img src="https://img.shields.io/badge/donate-Stripe-635BFF?style=flat-square&logo=stripe&logoColor=white" alt="Donate with Stripe"></a>
 </p>
 
 <p align="center">

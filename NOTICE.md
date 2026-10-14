@@ -23,3 +23,5 @@ under its own terms.
 - **Fonts**: Inter (SIL OFL 1.1), loaded from Google Fonts by the web page.
 - **Sample media** in `samples/` was generated with this studio from the prompts listed in `samples/README.md`.
   Each output is subject to the licence of the model that made it.
+
+Created by Sunny Chase (https://github.com/sunnychase) in collaboration with Claude (Anthropic).

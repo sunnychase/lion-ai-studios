@@ -41,6 +41,9 @@ IMAGE = {
     "Juggernaut Z Fast (4 steps)":              ["diffusion_models/Juggernaut_Z_V1_Fast_FP16.safetensors", "text_encoders/qwen_3_4b.safetensors"],
     "Juggernaut Z (Z-Image photoreal finetune)": ["diffusion_models/Juggernaut_Z_V1_by_RunDiffusion_fp16.safetensors", "text_encoders/qwen_3_4b.safetensors"],
     "FLUX.2 klein (fastest)":                   ["diffusion_models/flux-2-klein-4b.safetensors", "text_encoders/qwen_3_4b.safetensors"],
+    # Black Forest Labs' FLUX 3 Image Klein (distilled bf16) + its Qwen3-VL-4B encoder + BFL's prompt upsampler (Qwen3.5-9B int8) + its VAE
+    "FLUX 3 Image Klein (newest, edits, 16 steps)": ["diffusion_models/flux3_image_klein_sd_bf16.safetensors", "text_encoders/qwen3vl_4b_bf16.safetensors",
+        "text_encoders/qwen3.5_9b_flux3_prompt_upsampler_int8_convrot.safetensors", "vae/flux3_klein_vae.safetensors"],
 }
 IMAGE_PRESET = {"fasthd": "Z-Image-Turbo (photoreal, best)", "draft": "Z-Image-Turbo (photoreal, best)", "standard": "Krea 2 Turbo + realism LoRA", "high": "Qwen-Image 2.1 Turbo (8 steps, 2K, best text)"}
 MODELS_DIR = C.COMFY_MODELS
@@ -241,14 +244,53 @@ def edit_ready():
     return all(os.path.exists(os.path.join(MODELS_DIR, f)) for f in IMAGE[EDIT_MODEL])
 
 
+# FLUX 3 Image Klein edits too (BFL's template image_flux3_klein_distilled_image_edit). Qwen-Image 2.1 Turbo stays the default.
+FLUX3K = "FLUX 3 Image Klein (newest, edits, 16 steps)"
+EDIT_MODELS = (EDIT_MODEL, FLUX3K)
+F3_SYS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "comfyui_nodes", "flux3_klein_system_prompts.json")
+
+
+def edit_models():
+    return [m for m in EDIT_MODELS if all(os.path.exists(os.path.join(MODELS_DIR, f)) for f in IMAGE[m])]
+
+
+def flux3_edit_graph(images, prompt, seed, prefix):
+    """BFL's edit template: the upsampler sees the references and writes the instruction → ReferenceMultiLatent (each reference ~1 MP;
+    the output takes the first reference's shape at ~1 MP) → KSampler 16 steps, CFG 1, euler / simple"""
+    import json
+    sysp = json.load(open(F3_SYS_FILE))["edit"]
+    g = {"1": {"class_type": "UNETLoader", "inputs": {"unet_name": "flux3_image_klein_sd_bf16.safetensors", "weight_dtype": "default"}},
+         "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": "qwen3vl_4b_bf16.safetensors", "type": "flux3", "device": "default"}},
+         "3": {"class_type": "VAELoader", "inputs": {"vae_name": "flux3_klein_vae.safetensors"}},
+         "4": {"class_type": "CLIPLoader", "inputs": {"clip_name": "qwen3.5_9b_flux3_prompt_upsampler_int8_convrot.safetensors", "type": "flux3", "device": "default"}},
+         "5": {"class_type": "BatchImagesNode", "inputs": {}},
+         "6": {"class_type": "TextGenerate", "inputs": {"clip": ["4", 0], "prompt": prompt, "image": ["5", 0], "max_length": 3584, "sampling_mode": "on",
+               "sampling_mode.temperature": 1.0, "sampling_mode.top_k": 1, "sampling_mode.top_p": 0.95, "sampling_mode.min_p": 0.0,
+               "sampling_mode.repetition_penalty": 1.05, "sampling_mode.seed": int(seed) & 0xFFFFFFFF, "sampling_mode.presence_penalty": 0.0,
+               "thinking": False, "use_default_template": True, "mtp": "off", "system_prompt": sysp}},
+         "7": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["2", 0], "text": ["6", 0]}},
+         "8": {"class_type": "ConditioningZeroOut", "inputs": {"conditioning": ["7", 0]}},
+         "9": {"class_type": "ReferenceMultiLatent", "inputs": {"positive": ["7", 0], "negative": ["8", 0], "vae": ["3", 0], "resolution": "resize",
+               "resolution.megapixels": 1.0}},
+         "10": {"class_type": "KSampler", "inputs": {"model": ["1", 0], "seed": int(seed), "steps": 16, "cfg": 1.0, "sampler_name": "euler", "scheduler": "simple",
+                "positive": ["9", 0], "negative": ["9", 1], "latent_image": ["9", 2], "denoise": 1.0}},
+         "11": {"class_type": "VAEDecode", "inputs": {"samples": ["10", 0], "vae": ["3", 0]}},
+         "12": {"class_type": "SaveImage", "inputs": {"images": ["11", 0], "filename_prefix": prefix}}}
+    for i, im in enumerate(images[:4]):
+        g[f"2{i}"] = {"class_type": "LoadImage", "inputs": {"image": im}}
+        g["5"]["inputs"][f"images.image{i}"] = [f"2{i}", 0]; g["9"]["inputs"][f"images.image{i}"] = [f"2{i}", 0]
+    return g
+
+
 def shape_dims(preset, src_w, src_h, shape="auto"):
     """the preset's size in the source's shape — a vertical Short renders vertical (both sides stay /32)"""
     w, h = VIDEO[preset]["w"], VIDEO[preset]["h"]
     return (h, w) if shape == "auto" and src_w and src_h and src_h > src_w else (w, h)
 
 
-def edit_graph(images, prompt, seed, prefix, negative=""):
+def edit_graph(images, prompt, seed, prefix, negative="", model=EDIT_MODEL):
     """images: 1-4 file names in ComfyUI's input dir; the output takes the first reference's size (rounded to /32)"""
+    if model == FLUX3K: return flux3_edit_graph(images, prompt, seed, prefix)
     g = {"1": {"class_type": "UNETLoader", "inputs": {"unet_name": "qwen_image_2.1_turbo_bf16.safetensors", "weight_dtype": "default"}},
          "2": {"class_type": "QwenImage21Cache", "inputs": {"model": ["1", 0], "device": "auto", "dtype": "default"}},
          "3": {"class_type": "CLIPLoader", "inputs": {"clip_name": "qwen3vl_8b_int8_convrot.safetensors", "type": "qwen_image", "device": "default"}},

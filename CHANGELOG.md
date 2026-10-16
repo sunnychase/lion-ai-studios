@@ -2,6 +2,18 @@
 
 Updates to Lion AI Studios, newest first. The project has no version numbers; each entry is dated.
 
+## 2026-10-15 — FLUX 3 Image Klein
+
+- **FLUX 3 Image Klein** (Black Forest Labs, 5.6B, distilled, bf16) is a new optional image model, at BFL's own ComfyUI recipe: 16 steps,
+  euler / simple, CFG 1. Every prompt first goes through BFL's prompt upsampler (Qwen3.5-9B), as its model card asks, with BFL's system
+  prompts verbatim (`comfyui_nodes/flux3_klein_system_prompts.json`). The model, its Qwen3-VL-4B encoder, the upsampler and its VAE are
+  about 30 GB; the repo is gated and under the FLUX Kommunity License (see docs/MODELS.md).
+- **Edits with FLUX 3 Image Klein.** With reference images loaded, the model menu now offers Qwen-Image 2.1 Turbo (still the default) or
+  FLUX 3 Image Klein; models that cannot edit are greyed out. Klein edits follow BFL's edit template (the upsampler sees the references).
+- `scripts/install_comfyui.sh` adds ComfyUI's FLUX 3 support on top of the tested commit (upstream 20b46065, 9fa63b0a, 6da3d1a5, all part
+  of ComfyUI v0.41) and copies the prompts file next to the image node.
+- `scripts/models.json` gains the four files, with their sha256. Three new samples and a new section 15 in docs/BENCHMARKS.md.
+
 ## 2026-10-13
 
 - **Juggernaut Z fixed.** It is a fine-tune of Z-Image *Base*, not Turbo, but ran with Turbo settings (8 steps, CFG 1), which gave

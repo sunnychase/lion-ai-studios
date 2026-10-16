@@ -962,7 +962,7 @@ def run_edit(job):
     names = [to_input(f"{ROOT}/{im}", f"studio_{job['id']}_ref{i + 1}{os.path.splitext(im)[1]}") for i, im in enumerate(p["images"])]
     for k in range(p["count"]):
         job["progress"].update(seg=k + 1, segs=p["count"], phase=f"editing · {len(names)} reference(s) · {k + 1} of {p['count']}"); save()
-        pid = comfy_post(W.edit_graph(names, p["prompt"], p["seed"] + k, f"studio/{job['id']}_e{k + 1}", p.get("negative", "")))
+        pid = comfy_post(W.edit_graph(names, p["prompt"], p["seed"] + k, f"studio/{job['id']}_e{k + 1}", p.get("negative", ""), p.get("model", W.EDIT_MODEL)))
         files = [f for f in comfy_wait(pid, job) if f.lower().endswith(".png") and os.path.basename(f).startswith(f"{job['id']}_e{k + 1}")]
         if not files: raise RuntimeError("the edit produced no image")
         dst = f"{d}/img{k + 1:02d}.png"; shutil.move(files[0], dst); job["outputs"].append({"file": os.path.basename(dst), "kind": "image"}); save()
@@ -1123,7 +1123,7 @@ def state():
     o = gpu_owner(); h = heat()
     return {"jobs": sorted(JOBS.values(), key=lambda j: j["created"], reverse=True)[:60], "gpu": {**o, **GPU, "comfy": comfy_up(), "heat": h},
             "presets": {k: {**v, "est5": W.estimate_s(k, 5), "est15": W.estimate_s(k, 15)} for k, v in W.VIDEO.items()},
-            "image_models": W.image_models(), "tf_ready": W.tf_ready(), "vae8_ready": W.vae8_ready(), "cast_ready": W.cast_ready(), "music_ready": {e: MU.ready(e) for e in MU.ENGINES}, "gm": MT.GM, "kits": MT.KITS, "music_engines": MU.ENGINES, "music_keys": MU.KEYS, "image_preset": W.IMAGE_PRESET, "guide_frames": W.GUIDE_FRAMES, "director": DIR.status(), "voices": voices(),
+            "image_models": W.image_models(), "edit_models": W.edit_models(), "tf_ready": W.tf_ready(), "vae8_ready": W.vae8_ready(), "cast_ready": W.cast_ready(), "music_ready": {e: MU.ready(e) for e in MU.ENGINES}, "gm": MT.GM, "kits": MT.KITS, "music_engines": MU.ENGINES, "music_keys": MU.KEYS, "image_preset": W.IMAGE_PRESET, "guide_frames": W.GUIDE_FRAMES, "director": DIR.status(), "voices": voices(),
             "voice_ready": os.path.exists(TTS_PY) and os.path.isdir(f"{C.MODELS}/Qwen3-TTS-12Hz-1.7B-Base"), "brand": {"tenant": C.TENANT_NAME},
             "lr_ready": lr_ready(), "lr_models": list(W.LR_IMAGE), "lr_sizes": [f"{a}x{b}" for a, b in W.LR_GO_SIZES], "lr_n": W.LR_GO_N,
             "lr": {"busy": LRF["busy"], "idle_stop_s": LR_IDLE_S if lr_can_stop() else 0},
@@ -1219,8 +1219,9 @@ def mk_params(b):
             if not path.startswith(ROOT + "/") or not os.path.isfile(path): raise ValueError(f"image not found: {im}")
         pr = str(b.get("picture") or b.get("prompt") or "").strip()[:4000]
         if not pr: raise ValueError("write what to change")
-        if not W.edit_ready(): raise ValueError("Qwen-Image 2.1 Turbo is not installed")
-        return "edit", {"model": W.EDIT_MODEL, "prompt": pr, "negative": str(b.get("negative") or ""), "images": ims, "count": max(1, min(4, int(b.get("count") or 1))),
+        em = W.edit_models()                                                   # Qwen-Image 2.1 Turbo (default) or FLUX 3 Image Klein
+        if not em: raise ValueError("no edit model is installed (Qwen-Image 2.1 Turbo or FLUX 3 Image Klein)")
+        return "edit", {"model": b.get("model") if b.get("model") in em else em[0], "prompt": pr, "negative": str(b.get("negative") or ""), "images": ims, "count": max(1, min(4, int(b.get("count") or 1))),
                         "seed": seed, "preset": preset}
     if mode == "image":
         model = b.get("model") or W.IMAGE_PRESET[preset]

@@ -13,6 +13,8 @@ what is installed: an image model missing a file is left out of the list.
 
 > **Licences.** Each model has its own licence. Several restrict commercial use, among them Juggernaut Z (CC BY-NC 4.0),
 > Qwen-Image 2.1 (Qwen Research License), Krea 2 and MiniMax H3 (their community licences) and the FLUX.2 VAE's repo (non-commercial).
+> FLUX 3 Image Klein is under the FLUX Kommunity License v1.0: non-commercial use, plus commercial use of outputs for businesses under
+> US$5M gross annual revenue; anything else needs a licence from Black Forest Labs (bfl.ai/licensing).
 > Read the model card before you sell or publish what you make.
 
 ## Video with sound (MiniMax H3 / FastH3)
@@ -54,6 +56,14 @@ what is installed: an image model missing a file is left out of the list.
 | core | `ae.safetensors` | 0.3 GB | `comfy:vae` | [Comfy-Org/z_image_turbo](https://huggingface.co/Comfy-Org/z_image_turbo) | apache-2.0 | VAE for Z-Image, Juggernaut Z, Chroma |
 | optional | `qwen_image_vae.safetensors` | 0.3 GB | `comfy:vae` | [Comfy-Org/Qwen-Image_ComfyUI](https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI) | apache-2.0 | VAE for Qwen-Image 2512 and Krea 2 |
 | optional | `flux2-vae.safetensors` | 0.3 GB | `comfy:vae` | [Comfy-Org/flux2-dev](https://huggingface.co/Comfy-Org/flux2-dev) | repo card: flux-1-dev-non-commercial-license | VAE for FLUX.2 klein |
+| optional | `flux3_image_klein_sd_bf16.safetensors` | 11.1 GB | `comfy:diffusion_models` | [black-forest-labs/flux-3-image-klein-comfy](https://huggingface.co/black-forest-labs/flux-3-image-klein-comfy) ¹ | FLUX Kommunity License | FLUX 3 Image Klein (distilled, bf16): images and edits |
+| optional | `qwen3vl_4b_bf16.safetensors` | 8.9 GB | `comfy:text_encoders` | same repo ¹ | apache-2.0 | text encoder for FLUX 3 Image Klein |
+| optional | `qwen3.5_9b_flux3_prompt_upsampler_int8_convrot.safetensors` | 9.7 GB | `comfy:text_encoders` | same repo ¹ | apache-2.0 | BFL's prompt upsampler for FLUX 3 Image Klein |
+| optional | `flux3_klein_vae.safetensors` | 0.3 GB | `comfy:vae` | same repo, `vae/flux2-vae.safetensors` ¹ | FLUX Kommunity License | VAE for FLUX 3 Image Klein, saved under its own name (it is a different file from FLUX.2's) |
+
+¹ **Gated.** Accept the licence on the repo page while logged in to Hugging Face, then set `HF_TOKEN` for `download_models.py`.
+FLUX 3 Image Klein also needs ComfyUI's FLUX 3 support: `scripts/install_comfyui.sh` adds the three upstream commits (it is built into ComfyUI v0.41+).
+`scripts/models.json` lists the sha256 of each of these four files.
 
 ## Music
 

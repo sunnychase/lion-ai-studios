@@ -15,6 +15,9 @@ under its own terms.
 - **LocalRouter** ([jayleaton/localrouter](https://github.com/jayleaton/localrouter), Apache-2.0). Optional; not redistributed.
   The studio talks to it over HTTP. `systemd/lion-localrouter.service.example` and `docs/localrouter-tools.example.json` are
   example settings for it.
+- **FLUX 3 Image Klein prompts** (`comfyui_nodes/flux3_klein_system_prompts.json`): Black Forest Labs' prompt-upsampler system
+  prompts, copied verbatim from the ComfyUI workflow templates [Comfy-Org/workflow_templates](https://github.com/Comfy-Org/workflow_templates)
+  (MIT) `image_flux3_klein_distilled_t2i.json` and `image_flux3_klein_distilled_image_edit.json`. The model itself is not redistributed.
 - **Python packages**: mido, tinysoundfont, qwen-tts, demucs, transformers, accelerate, soundfile, yt-dlp, PyTorch, each under its own licence.
 - **MuseScore General soundfont** (MIT).
 - **Models**: see [docs/MODELS.md](docs/MODELS.md). Several restrict commercial use.

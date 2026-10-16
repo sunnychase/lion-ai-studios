@@ -32,6 +32,14 @@ re-encoded once to keep the repo small (H.264 CRF 22–24, AAC 160k; MP3 192k), 
 | `images/fisherman-krea2-realism.jpg` | Krea 2 Turbo + realism LoRA | Portrait of an elderly fisherman mending a net on a wooden dock at golden hour, weathered hands, knitted cap, shallow depth of field, natural light |
 | `images/reading-nook-flux2-klein.jpg` | FLUX.2 klein 4B | A cozy reading nook by a rainy window, a ginger cat asleep on a stack of old books, a cup of tea steaming, soft morning light |
 
+FLUX 3 Image Klein (16 steps, prompt upsampler on, one image per prompt):
+
+| file | prompt |
+|---|---|
+| `images/serengeti-lion-flux3-klein.jpg` (1344x768) | A lion resting on a granite rock on the Serengeti at golden hour |
+| `images/deco-poster-flux3-klein.jpg` (1024x1024) | Art deco travel poster that reads LION AI STUDIOS with the line Made on a DGX Spark underneath, a gold lion over a night city skyline |
+| `images/mug-edit-flux3-klein.jpg` | Left: Qwen-Image 2.1 Turbo, "Product photo of a matte black coffee mug on a marble counter, soft morning light". Right: that image edited with FLUX 3 Image Klein, "Make the mug glossy red ceramic with steam rising from it" |
+
 The people in these images are generated and fictional.
 
 ## Music

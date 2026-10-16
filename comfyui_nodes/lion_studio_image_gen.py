@@ -3,9 +3,13 @@
 
 One `model_name` dropdown covers every supported image model; choosing one switches the whole pipeline (loader, text encoder, VAE,
 sampler recipe), which a plain checkpoint-filename swap cannot do across architectures. Only one model family stays resident.
-Install: copy this file into ComfyUI/custom_nodes/ (ComfyUI >= 0.39 for Qwen-Image 2.1)."""
+Install: copy this file and flux3_klein_system_prompts.json into ComfyUI/custom_nodes/ (ComfyUI >= 0.39 for Qwen-Image 2.1;
+FLUX 3 Image Klein needs ComfyUI's FLUX 3 support, see scripts/install_comfyui.sh)."""
 
 import gc
+import json
+import math
+import os
 
 import torch
 import inspect
@@ -45,7 +49,35 @@ MODELS = {
         "snap": 32,
         "steps": 4,
     },
+    # Black Forest Labs' FLUX 3 Image Klein, distilled 5.6B, bf16. Recipe = BFL's ComfyUI template image_flux3_klein_distilled_t2i:
+    # 16 steps, CFG 1, euler / simple, the prompt through BFL's own upsampler first. FLUX Kommunity License (see docs/MODELS.md).
+    "FLUX 3 Image Klein (newest, edits, 16 steps)": {"snap": 16, "steps": 16},
 }
+
+F3_UNET = "flux3_image_klein_sd_bf16.safetensors"
+F3_TE = "qwen3vl_4b_bf16.safetensors"
+F3_PUP = "qwen3.5_9b_flux3_prompt_upsampler_int8_convrot.safetensors"
+F3_VAE = "flux3_klein_vae.safetensors"   # BFL's flux2-vae from the Klein repo, saved under its own name (not the same file as FLUX.2's)
+_F3_SYS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "flux3_klein_system_prompts.json")   # BFL's upsampler prompts, verbatim
+_pup = {"clip": None}
+
+
+def flux3_upsample(prompt, seed, width=0, height=0, image=None, edit=False):
+    """BFL's card: do not run Klein without its prompt upsampler — a short request becomes a full scene caption.
+    Settings = the templates' TextGenerate: 3584 tokens, temperature 1, top_k 1, top_p 0.95, repetition 1.05, presence 1.5 (t2i) / 0 (edit), MTP off."""
+    if _pup["clip"] is None:
+        _pup["clip"] = _call("CLIPLoader", clip_name=F3_PUP, type="flux3", device="default")[0]
+    req = prompt
+    if width and height and not edit:   # the t2i system prompt reads an optional "TARGET CANVAS: W:H" first line
+        g = math.gcd(int(width), int(height)); req = f"TARGET CANVAS: {width // g}:{height // g}\n{prompt}"
+    mode = {"sampling_mode": "on", "temperature": 1.0, "top_k": 1, "top_p": 0.95, "min_p": 0.0, "repetition_penalty": 1.05,
+            "seed": int(seed) & 0xFFFFFFFF, "presence_penalty": 0.0 if edit else 1.5}
+    sysp = json.load(open(_F3_SYS_FILE))["edit" if edit else "t2i"]
+    out = _call("TextGenerate", clip=_pup["clip"], prompt=req, max_length=3584, sampling_mode=mode, image=image, thinking=False,
+                use_default_template=True, mtp="off", system_prompt=sysp)[0]
+    out = (out or "").strip()
+    print(f"[Lion AI Studios] FLUX 3 Klein prompt upsampled ({len(prompt)} -> {len(out)} chars): {out[:400]}")
+    return out or prompt
 
 _cache = {"key": None, "loaded": None}
 
@@ -55,6 +87,7 @@ def _load(choice):
         return _cache["loaded"]
     # keep at most one model family resident; free the previous one first
     _cache["key"], _cache["loaded"] = None, None
+    _pup["clip"] = None   # the FLUX 3 upsampler goes with its family
     gc.collect()
     comfy.model_management.soft_empty_cache()
 
@@ -102,6 +135,10 @@ def _load(choice):
         patched = _call("HiDreamO1PatchSeamSmoothing", model=base, start_percent=0.8, end_percent=1.0,
                         pattern="single_shift", passes="ramp_2_4", blend="median", strength=1.0)[0]
         unet = {"base": base, "patched": patched}
+    elif choice.startswith("FLUX 3"):
+        unet = _call("UNETLoader", unet_name=F3_UNET, weight_dtype="default")[0]
+        clip = _call("CLIPLoader", clip_name=F3_TE, type="flux3", device="default")[0]
+        vae = _call("VAELoader", vae_name=F3_VAE)[0]
     else:  # FLUX.2 klein
         unet = _call("UNETLoader", unet_name="flux-2-klein-4b.safetensors", weight_dtype="default")[0]
         clip = _call("CLIPLoader", clip_name="qwen_3_4b.safetensors", type="flux2", device="default")[0]
@@ -142,6 +179,9 @@ class LionStudioImageGen:
         unet, clip, vae = _load(model_name)
         if model_name.startswith("Qwen-Image 2.1"):
             positive, negative = _call("TextEncodeQwenImage21", clip=clip, prompt=prompt, negative_prompt=negative_prompt, resolution=1024)[:2]
+        elif model_name.startswith("FLUX 3"):   # distilled, CFG 1: the negative is never used
+            positive = _call("CLIPTextEncode", clip=clip, text=flux3_upsample(prompt, seed, width, height))[0]
+            negative = _call("ConditioningZeroOut", conditioning=positive)[0]
         else:
             positive = _call("CLIPTextEncode", clip=clip, text=prompt)[0]
             negative = _call("CLIPTextEncode", clip=clip, text=negative_prompt)[0]
@@ -165,6 +205,10 @@ class LionStudioImageGen:
             latent = _call("EmptySD3LatentImage", width=width, height=height, batch_size=batch_size)[0]
             samples = _call("KSampler", model=unet, seed=seed, steps=steps, cfg=6.0 if model_name.startswith("Juggernaut Z (") else 1.0,
                             sampler_name="euler", scheduler="simple",
+                            positive=positive, negative=negative, latent_image=latent, denoise=1.0)[0]
+        elif model_name.startswith("FLUX 3"):   # BFL's template: EmptyFlux2LatentImage, KSampler 16 steps, CFG 1, euler / simple
+            latent = _call("EmptyFlux2LatentImage", width=width, height=height, batch_size=batch_size)[0]
+            samples = _call("KSampler", model=unet, seed=seed, steps=steps, cfg=1.0, sampler_name="euler", scheduler="simple",
                             positive=positive, negative=negative, latent_image=latent, denoise=1.0)[0]
         elif model_name.startswith("HiDream"):
             latent = _call("EmptyHiDreamO1LatentImage", width=width, height=height, batch_size=batch_size)[0]

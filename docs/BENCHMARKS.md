@@ -345,6 +345,24 @@ recipe (20 steps, res_multistep, no Turbo LoRA), 5 s (124 frames) with sound. Sa
   the wrong models folder, so it did not find the 8-bit decoder, which the studio would use. At 480p the decoder is a few seconds of a 328 s run.
 - n = 1 per row. The studio's own estimate for these jobs (`cast_estimate_s`) is 457 s for Draft and 1071 s for Fast HD.
 
+## 15. FLUX 3 Image Klein (2026-10-15)
+
+Black Forest Labs' FLUX 3 Image Klein (distilled, bf16) at BFL's template settings: 16 steps, euler / simple, CFG 1, every prompt through BFL's
+prompt upsampler (Qwen3.5-9B int8) first. One DGX Spark, studio jobs run one after another from a cold ComfyUI start, n = 1 each. Times are
+ComfyUI's own "Prompt executed" figures from its log; there is no `benchmarks/results/` file for this run.
+
+| Job | Size | Time | Note |
+|---|---|---:|---|
+| Text to image, first job | 1344x768 | 28.7 s | cold: loads the model, encoder and upsampler; the upsampler took ~14 s of it (64-character prompt → 1,416-character caption) |
+| Text to image | 1024x1024 | 22.6 s | poster with lettering |
+| Text to image | 1024x1024 | 20.7 s | "A rabbit skateboarding" (22 characters → 1,280) |
+| Text to image | 832x1216 | 21.6 s | portrait |
+| Edit, 1 reference | 1024x1024 | 35.0 s | first edit: the upsampler reads the image too |
+| Edit, 2 references | 1360x752 | 59.0 s | output takes the first reference's shape at ~1 MP |
+
+From the log's timestamps, the upsampler (writing a 1,300–1,500-character caption) takes 10–12 s of each later text-to-image job and
+encoding, the 16 steps and decoding the other 10–11 s, so about half each. Peak memory and temperature were not recorded.
+
 ## Not measured
 
 - **Recreate a Short (Faithful and Re-imagine), and the narrator-voice clone from a YouTube Short.** Not measured: these need a source video the project may use.

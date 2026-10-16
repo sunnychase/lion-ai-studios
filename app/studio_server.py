@@ -16,10 +16,13 @@ import workflows as W, stitch, director as DIR                 # noqa: E402
 import music as MU                                              # noqa: E402  
 import studio_broker as SB                                      # noqa: E402  (the memory broker)
 import midi_tool as MT                                          # noqa: E402  (GM names only; mido/tinysoundfont run in midi-venv)
+import negation as NG                                           # noqa: E402  (prompt words the models would show)
+import shot as SHOT                                             # noqa: E402  (cuts / keyframes held)
 
 ROOT = C.STUDIO_HOME; LIB = f"{ROOT}/library"; STATE = f"{ROOT}/state"; UP = f"{ROOT}/uploads"
 VOICES = f"{ROOT}/voices"; TTS_PY = C.TTS_PY; VOICE_PY = f"{HERE}/voice.py"
-for d in (LIB, STATE, UP, VOICES): os.makedirs(d, exist_ok=True)
+TRASH = C.TRASH                                                 # deletes move here; Restore brings them back
+for d in (LIB, STATE, UP, VOICES, TRASH): os.makedirs(d, exist_ok=True)
 COMFY = C.COMFY_URL; COMFY_IN = f"{C.COMFY_DIR}/input"; COMFY_OUT = f"{C.COMFY_DIR}/output"
 JOBS_F = f"{STATE}/jobs.json"; PORT = C.PORT
 NEED_GIB = C.NEED_GIB; HOT_C = C.HOT_C; COOL_C = C.COOL_C
@@ -65,9 +68,44 @@ def ensure_comfy():
     if not C.COMFY_SERVICE: return False
     sh(["systemctl", "--user", "start", C.COMFY_SERVICE], 30)
     for _ in range(90):
-        if comfy_up(): WS.kick(); return True
+        if comfy_up(): WS.kick(); comfy_oom_first(); return True
         time.sleep(2)
     return False
+
+
+# ── the memory guard: the floor under a render ──────────────────────────────────────────────────────────────────────────────────────
+# Idea and numbers from drowzeys/keys-Wasserman-Slate-AI-Studio-powered-by-TensorFold (spark/memory_guard.py, Apache-2.0); written for this
+# studio. The Spark's GPU and system share one pool: a render that overruns it makes the whole box stop answering (their worker: 40.9 GB
+# available -> unreachable in 12 s). While a studio render runs, MemAvailable is read 4x/s: under MEM_FLOOR_GIB, or falling fast enough to
+# cross MEM_CRIT_GIB within a second -> ComfyUI is interrupted and the job fails with the reason; under MEM_CRIT_GIB ComfyUI is also stopped
+# outright (COMFY_SERVICE; the next job starts it again). ComfyUI is also marked the kernel's first choice if memory runs out all the same.
+MEM_FLOOR_GIB, MEM_CRIT_GIB = C.MEM_FLOOR_GIB, C.MEM_CRIT_GIB; RUNNING = {"pid": None, "stop": ""}
+
+
+def comfy_oom_first():
+    if not C.COMFY_SERVICE: return
+    try:
+        mp = sh(["systemctl", "--user", "show", "-p", "MainPID", "--value", C.COMFY_SERVICE], 10).strip()
+        if mp and mp != "0": open(f"/proc/{mp}/oom_score_adj", "w").write("800")
+    except Exception: pass
+
+
+def mem_guard():
+    prev = None
+    while True:
+        time.sleep(0.25)
+        if not RUNNING["pid"]: prev = None; continue
+        m = meminfo_gib(); fall = (prev - m) * 4 if prev is not None else 0.0; prev = m
+        if m <= 0: continue
+        if m < MEM_FLOOR_GIB or (fall > 0 and m - fall < MEM_CRIT_GIB):
+            RUNNING["stop"] = (f"stopped to protect the Spark: free memory fell to {m:.1f} GiB (floor {MEM_FLOOR_GIB:g} GiB) — try a shorter clip, "
+                               "a smaller size, or stop other GPU services first")
+            try: urllib.request.urlopen(urllib.request.Request(f"{COMFY}/interrupt", data=b"{}", headers={"Content-Type": "application/json"}), timeout=5)
+            except Exception: pass
+            if m < MEM_CRIT_GIB and C.COMFY_SERVICE:
+                try: subprocess.run(["systemctl", "--user", "stop", C.COMFY_SERVICE], timeout=60)
+                except Exception: pass
+            time.sleep(3); prev = None
 
 
 # ── the optional Fast image engine (LocalRouter) + the memory broker ─────────────────────────────────────────────────────────────────
@@ -187,7 +225,14 @@ def comfy_post(graph):
     except urllib.error.HTTPError as e:
         raise RuntimeError("ComfyUI refused the graph: " + e.read().decode("utf-8", "replace")[:600])
 def comfy_wait(pid, job):
+    RUNNING.update(pid=pid, stop="")                                          # the memory guard watches while this runs
+    try: return _comfy_wait(pid, job)
+    finally: RUNNING.update(pid=None)
+
+
+def _comfy_wait(pid, job):
     while True:
+        if RUNNING["stop"]: raise RuntimeError(RUNNING["stop"])              # the memory guard stopped it
         if job.get("cancel"):
             try: urllib.request.urlopen(urllib.request.Request(f"{COMFY}/interrupt", data=b"{}", headers={"Content-Type": "application/json"}), timeout=10)
             except Exception: pass
@@ -423,7 +468,7 @@ def faithful_shots(job, plan, src, d, dims, ims):
     who = DIR.who_is_performer(src); p["performer"] = who
     pid = comfy_post(W.edit_graph(ims[:3], "Make a clean studio portrait of this exact person: the same face, facial features, skin tone, hair and beard, "
                                   "unchanged. Head and shoulders, looking straight at the camera, neutral expression, plain light grey background, soft even "
-                                  "light. No hat, no text, no phone screen, no icons.", int(p["seed"]) + 3, f"studio/{job['id']}_card"))
+                                  "light, bare head, an empty plain background around them.", int(p["seed"]) + 3, f"studio/{job['id']}_card"))
     fs = [f for f in comfy_wait(pid, job) if f.lower().endswith(".png") and os.path.basename(f).startswith(f"{job['id']}_card")]
     if not fs: raise RuntimeError("could not make the cast portrait")
     card_png = f"{fd}/cast_portrait.png"; shutil.move(fs[0], card_png); card = to_input(card_png, f"studio_{job['id']}_card.png"); swapped = 0
@@ -446,8 +491,8 @@ def faithful_shots(job, plan, src, d, dims, ims):
                 subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", raw, "-vf", f"scale={Wd}:{Hd}:flags=lanczos", out], capture_output=True); row.append(out); continue
             mk = c["makeup"]; mk = "" if mk.lower().startswith(("none", "no ")) else f" Keep the {mk} on the new face, exactly as in image 1."
             pr = (f"In image 1, replace only {who} ({c['where']}) with the person in image 2: give them that person's face, facial features, face shape, "
-                  f"beard and identity. Keep their facial expression ({c['expression']}), head angle and gaze exactly as in image 1.{mk} Do not change "
-                  "anyone else, their costume, pose, hands, framing, lighting, colours or background.")
+                  f"beard and identity. Keep their facial expression ({c['expression']}), head angle and gaze exactly as in image 1.{mk} Everyone else, "
+                  "their costume, pose, hands, framing, lighting, colours and background stay exactly as in image 1.")   # said positively: no negative prompt
             pid = comfy_post(W.edit_graph([to_input(raw, f"studio_{job['id']}_f{n:03d}.png"), card], pr, int(p["seed"]) + 7, f"studio/{job['id']}_f{n:03d}"))
             files = [f for f in comfy_wait(pid, job) if f.lower().endswith(".png") and os.path.basename(f).startswith(f"{job['id']}_f{n:03d}")]
             if not files: raise RuntimeError(f"frame {n}: the cast swap produced no image")
@@ -464,8 +509,9 @@ def faithful_shots(job, plan, src, d, dims, ims):
             m += 1; wait_cool(job); G = ts[j + 1] - ts[j]
             job["progress"].update(seg=m, segs=tot, step=0, steps=0, phase=f"animating {m} of {tot} · shot {i + 1} of {len(plan)}"); save()
             a = to_input(row[j], f"studio_{job['id']}_k{m:03d}a.png"); b = to_input(row[j + 1], f"studio_{job['id']}_k{m:03d}b.png")
-            cp = ("One continuous shot with no cut. Keep exactly the scene, setting, people, costumes, makeup, framing and lighting of the first and last "
-                  "frames; everything moves naturally and smoothly from the first frame to the last. Do not add new people, places or objects.")
+            cp = ("One continuous, unbroken shot. Keep exactly the scene, setting, people, costumes, makeup, framing and lighting of the first and last "   # said positively:
+                  "frames; everything moves naturally and smoothly from the first frame to the last. Only the people, places and objects of the first "  # the video model has no
+                  "and last frames appear.")                                                                                                            # negative prompt
             if p.get("soundtrack") == "new": cp += "\n\n" + sh["prompt"]                # only the remake's own sound needs the director's sound line
             g, info = W.video_graph(p["preset"], cp, G, int(p["seed"]) + m, f"studio/{job['id']}_c{m:03d}", first_image=a, last_image=b,
                                     engine=p.get("engine", "comfy"), vae8=bool(p.get("vae8")), dims=dims)
@@ -584,26 +630,53 @@ def run_video(job):
         if f.startswith(f"studio_{job['id']}_"): os.remove(os.path.join(COMFY_IN, f))
 
 
-def directed(job, k, seg, prompt, rerender):
+def shot_check(job, k, seg, prompt, first=None, last=None):
+    """frame-level check (shot.py) of one take — a hard cut inside a one-shot clip, or a keyframe the clip did not open/close on.
+    Never fails a job; a check that cannot run says so. The web app itself needs only the standard library: when this python has no
+    numpy/Pillow, the check runs in the voice environment (which has both)."""
+    single = SHOT.one_shot(prompt)
+    try:
+        try:
+            import numpy, PIL  # noqa: F401
+            r = SHOT.check(seg, first, last, single=single)
+        except ImportError:
+            code = ("import json, sys; sys.path.insert(0, sys.argv[1]); import shot; "
+                    "print(json.dumps(shot.check(sys.argv[2], sys.argv[3] or None, sys.argv[4] or None, single=sys.argv[5] == '1')))")
+            o = subprocess.run([TTS_PY, "-c", code, HERE, seg, first or "", last or "", "1" if single else "0"], capture_output=True, text=True, timeout=300)
+            if o.returncode: raise RuntimeError((o.stderr or o.stdout or "no output").strip()[-200:])
+            r = json.loads(o.stdout.strip().splitlines()[-1])
+    except Exception as e: r = {"passed": True, "note": f"shot check not run: {type(e).__name__}: {str(e)[:120]}"}
+    job.setdefault("shots", {})[str(k + 1)] = {x: r.get(x) for x in ("passed", "note", "cuts", "first", "last", "window")}; save(); return r
+
+
+def directed(job, k, seg, prompt, rerender, first=None, last=None):
     """the director watches segment k; with review='retake' a weak take (score <= 5 or off-prompt) is re-rendered once with its fix, and the
-    better-scored take is kept. rerender(prompt, seed_bump) -> path of the new take."""
+    better-scored take is kept. rerender(prompt, seed_bump) -> path of the new take.
+    Every take is also frame-checked (cut inside a one-shot clip / keyframe not held); a failed check triggers the same
+    single re-take, and the take that passes the frame check wins before the director's score is compared."""
     mode = job["params"].get("review", "retake")
-    if mode == "off": return seg
+    sc = shot_check(job, k, seg, prompt, first, last)
+    if mode == "off":
+        return seg
     job["progress"]["phase"] = f"director is watching segment {k + 1}"; save()
     try: rv = DIR.review(seg, prompt)
     except Exception as e:
         job.setdefault("reviews", {})[str(k + 1)] = {"error": f"review skipped: {type(e).__name__}: {str(e)[:160]}"}; save(); return seg
     rv["take"] = 1; job.setdefault("reviews", {})[str(k + 1)] = rv; save()
-    if mode != "retake" or (rv["score"] > 5 and rv.get("matches_prompt", True)) or not rv.get("fix"): return seg
-    job["progress"]["phase"] = f"segment {k + 1}: re-take (director scored {rv['score']}/10)"; save()
-    new = rerender(prompt + "\n\nDirector's note for this take: " + rv["fix"], 100)
+    weak = (rv["score"] <= 5 or not rv.get("matches_prompt", True)) and rv.get("fix")
+    if mode != "retake" or not (weak or not sc["passed"]): return seg
+    fix = rv.get("fix") if weak else ""
+    if not sc["passed"]: fix = (fix + " " if fix else "") + "One continuous, unbroken shot that holds its first and last frames."
+    job["progress"]["phase"] = f"segment {k + 1}: re-take (" + (f"director scored {rv['score']}/10" if weak else sc.get("note", "frame check")[:60]) + ")"; save()
+    new = rerender(prompt + "\n\nDirector's note for this take: " + fix, 100)
     try: rv2 = DIR.review(new, prompt)
     except Exception: rv2 = {"score": 0}
+    sc2 = shot_check(job, k, new, prompt, first, last)
     rv2["take"] = 2; rv2["first"] = rv
-    if rv2.get("score", 0) > rv["score"]:
-        os.replace(new, seg); rv2["kept"] = "re-take"
+    if (sc2["passed"], rv2.get("score", 0)) > (sc["passed"], rv["score"]):
+        os.replace(new, seg); rv2["kept"] = "re-take"; job["shots"][str(k + 1)]["kept"] = "re-take"
     else:
-        os.remove(new); rv2["kept"] = "first take"
+        os.remove(new); rv2["kept"] = "first take"; job["shots"][str(k + 1)] = {**{x: sc.get(x) for x in ("passed", "note", "cuts", "first", "last", "window")}, "kept": "first take"}
     job["reviews"][str(k + 1)] = rv2; save(); return seg
 
 
@@ -627,7 +700,7 @@ def run_keyframes(job):
             fs = [f for f in comfy_wait(comfy_post(g2), job) if f.endswith(".mp4") and os.path.basename(f).startswith(f"{job['id']}_s{k + 1}r_")]
             if not fs: raise RuntimeError(f"clip {k + 1} re-take produced no video")
             out = f"{d}/seg{k + 1:02d}.retake.mp4"; shutil.move(fs[0], out); return out
-        seg = directed(job, k, seg, prompt, rerender); done.append(seg)
+        seg = directed(job, k, seg, prompt, rerender, first=f"{ROOT}/{p['images'][k]}", last=f"{ROOT}/{p['images'][k + 1]}"); done.append(seg)   # keyframes for the shot check
         job["outputs"] = [{"file": os.path.basename(x), "kind": "segment"} for x in done]; save()
     job["progress"]["phase"] = "joining the clips"; save()
     main = f"{d}/film.mp4"; rc, log = stitch.join_keyframes(done, main)
@@ -659,6 +732,7 @@ def run_voice(job):
     cap = vworker("capture", p["url"], d, t=2400)
     meta = json.load(open(f"{d}/transcript.json"))
     if not meta["segments"]: raise RuntimeError("no speech was found in that video")
+    if p.get("multi"): return run_voice_multi(job, d, cap, meta)                    # everyone who speaks
     job["progress"].update(phase=f"the director is watching \"{cap.get('title', '')[:60]}\" to find {p.get('who') or 'the main speaker'}"); save()
     pick = DIR.pick_voice(f"{d}/source.mp4", meta["segments"], p.get("who", ""), meta["duration"])
     job["progress"].update(phase=f"cutting {pick['start']:.1f}–{pick['end']:.1f} s and cloning a preview"); save()
@@ -668,6 +742,94 @@ def run_voice(job):
          "who": p.get("who", ""), "pick": pick, "ref_text": cut["ref_text"], "consent": True, "created": now()}
     json.dump(v, open(f"{d}/voice.json", "w"), indent=1)
     job["outputs"] = [{"file": "preview.wav", "kind": "voice"}, {"file": "ref.wav", "kind": "reference"}]; job["voice"] = v
+
+
+# ── the Trash (idea from drowzeys/keys-Wasserman-Slate-AI-Studio-powered-by-TensorFold app/clear.py, Apache-2.0; written for this studio) ──
+def _trash_put(kind, iid, src, record):
+    tid = f"{kind}-{iid}"; d = f"{TRASH}/{tid}"
+    if os.path.exists(d): d = f"{d}-{int(time.time())}"; tid = os.path.basename(d)
+    os.makedirs(d); json.dump({"kind": kind, "id": iid, "trashed": now(), "record": record}, open(f"{d}/trash.json", "w"), indent=1)
+    if os.path.exists(src): shutil.move(src, f"{d}/data")
+    return {"ok": True, "trash_id": tid}
+
+
+def trash_job(j):
+    with LOCK: JOBS.pop(j["id"], None)
+    save(); return _trash_put("job", j["id"], f"{LIB}/{j['id']}", j)
+
+
+def trash_voice(vid):
+    v = {}
+    try: v = json.load(open(f"{VOICES}/{vid}/voice.json"))
+    except (OSError, ValueError): pass
+    return _trash_put("voice", vid, f"{VOICES}/{vid}", v)
+
+
+def trash_list():
+    out = []
+    for tid in sorted(os.listdir(TRASH), reverse=True):
+        try: t = json.load(open(f"{TRASH}/{tid}/trash.json"))
+        except (OSError, ValueError): continue
+        r = t.get("record") or {}; p = r.get("params") or {}
+        label = r.get("label") if t["kind"] == "voice" else (p.get("prompt") or p.get("style") or r.get("kind") or "")
+        out.append({"trash_id": tid, "kind": t["kind"], "id": t["id"], "trashed": t["trashed"], "label": str(label)[:90], "job_kind": r.get("kind")})
+    return out
+
+
+def trash_restore(tid):
+    if not re.match(r"^[\w-]+$", tid) or not os.path.isfile(f"{TRASH}/{tid}/trash.json"): raise ValueError("no such item in the trash")
+    t = json.load(open(f"{TRASH}/{tid}/trash.json")); dst = f"{LIB}/{t['id']}" if t["kind"] == "job" else f"{VOICES}/{t['id']}"
+    if os.path.exists(dst): raise ValueError("something with that id already exists")
+    if os.path.exists(f"{TRASH}/{tid}/data"): shutil.move(f"{TRASH}/{tid}/data", dst)
+    if t["kind"] == "job":
+        with LOCK: JOBS[t["id"]] = t["record"]
+        save()
+    shutil.rmtree(f"{TRASH}/{tid}"); return {"ok": True, "kind": t["kind"], "id": t["id"]}
+
+
+def trash_empty(tid=None):
+    """permanent: the one place the studio deletes files, and only on the user's explicit Empty (one item or all)"""
+    ids = [tid] if tid else os.listdir(TRASH); n = 0
+    for x in ids:
+        if re.match(r"^[\w-]+$", str(x)) and os.path.isdir(f"{TRASH}/{x}"): shutil.rmtree(f"{TRASH}/{x}"); n += 1
+    return {"ok": True, "removed": n}
+
+
+def run_voice_multi(job, d, cap, meta):
+    """everyone who speaks in the video becomes a voice of their own. voice.py `speakers` groups the phrases by the
+    clone model's own speaker fingerprints and picks each person's longest clean solo stretch; the director names each from frames taken
+    while only they talk; each gets voices/<job>-sN/ (ref.wav, ref.json, preview.wav, voice.json). The capture stays in voices/<job>/
+    (source, stems, transcript, speakers.json) and is not itself a voice."""
+    p = job["params"]; vid = job["id"]
+    job["progress"].update(phase="telling the voices apart (Qwen3-TTS speaker fingerprints)"); save()
+    vworker("speakers", d, str(int(p.get("max_speakers") or 6)), str(int(p.get("speakers") or 0)), t=1200)
+    sp = json.load(open(f"{d}/speakers.json")); made, skipped = [], []
+    for s in sp["speakers"]:
+        n = s["n"]; tag = f"speaker {n} of {sp['k']}"
+        if not s["enough"]: skipped.append(f"{tag}: only {s['best']['seconds']:.0f} s of clean speech (needs 5 s)"); continue
+        vd = f"{VOICES}/{vid}-s{n}"; os.makedirs(vd, exist_ok=True); b = s["best"]
+        job["progress"].update(seg=n, segs=sp["k"], phase=f"{tag}: the director looks at who is talking"); save()
+        frames = []
+        for q, (pa, pb) in zip((0.2, 0.5, 0.8), (b["parts"] * 3)[:3]):          # frames while only this speaker talks
+            fp = f"{vd}/look{int(q * 10)}.jpg"; t = pa + q * (pb - pa)
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{t:.2f}", "-i", f"{d}/source.mp4", "-frames:v", "1", "-vf", "scale=640:-2", fp], capture_output=True)
+            if os.path.exists(fp): frames.append(fp)
+        try: who = DIR.name_speaker(frames, b["text"], meta.get("title", ""))
+        except Exception as e: who = {"label": "", "name": "", "looks": "", "error": f"{type(e).__name__}: {str(e)[:100]}"}
+        job["progress"].update(phase=f"{tag}: cutting {b['seconds']:.1f} s of their speech ({len(b['parts'])} part(s)) and cloning a preview"); save()
+        cut = vworker("cutparts", d, vd, json.dumps(b["parts"]))
+        vworker("say", vd, p.get("preview") or "Hello. This is a preview of the matched voice, ready for your next film.", f"{vd}/preview.wav", "2", t=900)
+        label = who.get("name") or who.get("label") or f"Speaker {n}"
+        if p.get("label"): label = f"{p['label']} — {label}"
+        v = {"id": f"{vid}-s{n}", "label": label[:60], "url": p["url"], "title": meta["title"], "uploader": meta.get("uploader"), "who": who.get("looks", ""),
+             "pick": {"start": b["start"], "end": b["end"], "speaker": who.get("looks") or tag, "by": "voice fingerprints (Qwen3-TTS) + director",
+                      "reason": f"{tag} · {s['seconds']:.0f} s of speech · reference {b['seconds']:.1f} s" + (f" joined from {len(b['parts'])} turns" if len(b['parts']) > 1 else "")}, "ref_text": cut["ref_text"], "consent": True,
+             "created": now(), "group": vid, "speaker": n}
+        json.dump(v, open(f"{vd}/voice.json", "w"), indent=1); made.append(v)
+    if not made: raise RuntimeError("no speaker had a clean 6 s stretch on their own — " + "; ".join(skipped))
+    job["voices"] = made; job["skipped"] = skipped
+    job["outputs"] = []                                                       # the voices live on the Voices tab (voices/<job>-sN/)
+    job["notes"] = f"{len(made)} voice(s) from {sp['k']} speaker(s)" + (" · skipped: " + "; ".join(skipped) if skipped else "")
 
 
 def voices():
@@ -685,8 +847,16 @@ def add_voiceover(job, main):
     if not vid or not text: return main
     vd = f"{VOICES}/{vid}"
     if not os.path.exists(f"{vd}/ref.json"): raise RuntimeError("that voice is gone from the Voices tab")
-    job["progress"].update(phase="speaking the voice-over in the cloned voice (Qwen3-TTS)"); save()
-    d = os.path.dirname(main); vo = f"{d}/voiceover.wav"; vworker("say", vd, text, vo, t=900)
+    d = os.path.dirname(main); vo = f"{d}/voiceover.wav"
+    if p.get("vo_engine") == "drama3":                                        # optional Fish Audio Drama 3: ~42 GB — ComfyUI's models out first
+        job["progress"].update(phase="speaking the voice-over with Fish Audio Drama 3 (loads ~18 s)"); save()
+        try: urllib.request.urlopen(urllib.request.Request(f"{COMFY}/free", data=json.dumps({"unload_models": True, "free_memory": True}).encode(),
+                                                           headers={"Content-Type": "application/json"}), timeout=30)
+        except Exception: pass
+        r = vworker("say3", vd, text, vo, t=1800); job["vo_check"] = r.get("wordcheck"); job["vo_engine"] = "Fish Audio Drama 3 — Built with Fish Audio"
+    else:
+        job["progress"].update(phase="speaking the voice-over in the cloned voice (Qwen3-TTS)"); save()
+        r = vworker("say", vd, text, vo, t=900); job["vo_check"] = r.get("wordcheck")
     vdur, fdur = stitch.probe(vo)["dur"] or 0, stitch.probe(main)["dur"]; lead = 0.4; extra = max(0.0, lead + vdur + 0.3 - fdur)
     out = f"{d}/film_vo.mp4"
     graph = (f"[0:v]tpad=stop_mode=clone:stop_duration={extra:.2f}[v];[1:a]adelay={int(lead * 1000)}|{int(lead * 1000)},apad[vo];"
@@ -956,13 +1126,28 @@ def run_export(job):
     job["outputs"] = [{"file": rel, "kind": f"edit v{n}"}]; save()
 
 
+def noise_seed(seed, pictures):
+    """(idea from drowzeys/keys-Wasserman-Slate-AI-Studio-powered-by-TensorFold edit_plan.py, Apache-2.0): an edit's noise is drawn for the seed AND the
+    bytes of every input picture. With the plain seed, an edit whose seed equals the one its source was made with starts from that picture's
+    own noise and walks back to it (their run: 12 of 71 such edits came back as the source with doubled contrast). Same seed + same pictures +
+    same prompt still gives the same result. 48 bits so it travels as a whole number."""
+    import hashlib
+    h = hashlib.sha256(f"studio-edit:{int(seed)}".encode())
+    for pic in pictures:
+        with open(pic, "rb") as fh:
+            for blk in iter(lambda: fh.read(1 << 20), b""): h.update(blk)
+        h.update(b"|")
+    return int.from_bytes(h.digest()[:6], "big")
+
+
 def run_edit(job):
     """the references into ComfyUI's input dir, one Turbo edit per seed (count), saved as img01.."""
     p = job["params"]; d = f"{LIB}/{job['id']}"; os.makedirs(d, exist_ok=True)
     names = [to_input(f"{ROOT}/{im}", f"studio_{job['id']}_ref{i + 1}{os.path.splitext(im)[1]}") for i, im in enumerate(p["images"])]
     for k in range(p["count"]):
         job["progress"].update(seg=k + 1, segs=p["count"], phase=f"editing · {len(names)} reference(s) · {k + 1} of {p['count']}"); save()
-        pid = comfy_post(W.edit_graph(names, p["prompt"], p["seed"] + k, f"studio/{job['id']}_e{k + 1}", p.get("negative", ""), p.get("model", W.EDIT_MODEL)))
+        ns = noise_seed(p["seed"] + k, [f"{ROOT}/{im}" for im in p["images"]]); job.setdefault("noise_seeds", []).append(ns)
+        pid = comfy_post(W.edit_graph(names, p["prompt"], ns, f"studio/{job['id']}_e{k + 1}", p.get("negative", ""), p.get("model", W.EDIT_MODEL)))
         files = [f for f in comfy_wait(pid, job) if f.lower().endswith(".png") and os.path.basename(f).startswith(f"{job['id']}_e{k + 1}")]
         if not files: raise RuntimeError("the edit produced no image")
         dst = f"{d}/img{k + 1:02d}.png"; shutil.move(files[0], dst); job["outputs"].append({"file": os.path.basename(dst), "kind": "image"}); save()
@@ -1125,6 +1310,7 @@ def state():
             "presets": {k: {**v, "est5": W.estimate_s(k, 5), "est15": W.estimate_s(k, 15)} for k, v in W.VIDEO.items()},
             "image_models": W.image_models(), "edit_models": W.edit_models(), "tf_ready": W.tf_ready(), "vae8_ready": W.vae8_ready(), "cast_ready": W.cast_ready(), "music_ready": {e: MU.ready(e) for e in MU.ENGINES}, "gm": MT.GM, "kits": MT.KITS, "music_engines": MU.ENGINES, "music_keys": MU.KEYS, "image_preset": W.IMAGE_PRESET, "guide_frames": W.GUIDE_FRAMES, "director": DIR.status(), "voices": voices(),
             "voice_ready": os.path.exists(TTS_PY) and os.path.isdir(f"{C.MODELS}/Qwen3-TTS-12Hz-1.7B-Base"), "brand": {"tenant": C.TENANT_NAME},
+            "drama3_ready": all(os.path.exists(x) for x in (f"{C.DRAMA3_DIR}/bin/drama3-generate", f"{C.DRAMA3_DIR}/codec-v1.safetensors", f"{C.DRAMA3_MODEL}/config.json")),
             "lr_ready": lr_ready(), "lr_models": list(W.LR_IMAGE), "lr_sizes": [f"{a}x{b}" for a, b in W.LR_GO_SIZES], "lr_n": W.LR_GO_N,
             "lr": {"busy": LRF["busy"], "idle_stop_s": LR_IDLE_S if lr_can_stop() else 0},
             "broker": BR.status()}
@@ -1244,13 +1430,13 @@ def mk_params(b):
         return "keyframes", {"preset": preset, "prompt": prompt, "images": [str(x) for x in ims], "gaps": gaps, "seed": seed, "beats": b.get("beats", ""),
                              "seconds": round(sum(gaps) - (len(gaps) - 1) / W.FPS, 2), "picture": b.get("picture", ""), "action": b.get("action", ""), "sound": b.get("sound", ""),
                              "review": b.get("review") if b.get("review") in ("off", "note", "retake") else "retake",
-                             "voice": str(b.get("voice") or ""), "vo": str(b.get("vo") or "")[:3000], **eng(b), **scorep(b)}
+                             "voice": str(b.get("voice") or ""), "vo": str(b.get("vo") or "")[:3000], "vo_engine": "drama3" if b.get("vo_engine") == "drama3" else "qwen", **eng(b), **scorep(b)}
     prompt = b.get("prompt") or W.compose_prompt(b.get("picture", ""), b.get("action", ""), b.get("sound", ""))
     if not prompt.strip(): raise ValueError("write what the picture shows")
     sec = float(b.get("seconds") or 5)
     p = {"preset": preset, "prompt": prompt, "seconds": sec, "seed": seed, "beats": b.get("beats", ""), "picture": b.get("picture", ""),
          "action": b.get("action", ""), "sound": b.get("sound", ""), "review": b.get("review") if b.get("review") in ("off", "note", "retake") else "retake",
-         "voice": str(b.get("voice") or ""), "vo": str(b.get("vo") or "")[:3000], **eng(b), **scorep(b)}
+         "voice": str(b.get("voice") or ""), "vo": str(b.get("vo") or "")[:3000], "vo_engine": "drama3" if b.get("vo_engine") == "drama3" else "qwen", **eng(b), **scorep(b)}
     ims = [str(x) for x in (b.get("cast_images") or [])][:3]
     for im in ims:
         path = os.path.realpath(os.path.join(ROOT, im))
@@ -1299,6 +1485,7 @@ class H(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         if u.path == "/": return self._send(200, open(f"{HERE}/index.html", "rb").read(), "text/html; charset=utf-8")
         if u.path == "/api/state": return self._send(200, state())
+        if u.path == "/api/trash": return self._send(200, {"items": trash_list()})
         if u.path == "/api/edit":
             try: return self._send(200, edit_state(film_job((parse_qs(u.query).get("id") or [""])[0])))
             except ValueError as e: return self._send(400, {"error": str(e)})
@@ -1325,10 +1512,14 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {"file": name})
         try: b = json.loads(self.rfile.read(n) or b"{}") if n else {}
         except ValueError: return self._send(400, {"error": "bad JSON"})
+        if u.path == "/api/negation":                                         # negation.py: words the models would show
+            return self._send(200, NG.check(str(b.get("text") or "")[:20000]))
         if u.path == "/api/jobs":
             try: kind, p = mk_params(b)
             except (ValueError, TypeError) as e: return self._send(400, {"error": str(e)})
-            return self._send(200, new_job(kind, p))
+            j = new_job(kind, p); ng = NG.find(" ".join(str(p.get(k) or "") for k in ("prompt", "notes", "changes")))
+            if ng: j["notes"] = "Prompt names things to forbid them (" + ", ".join(f'"{x["phrase"]}"' for x in ng[:4]) + ") — the model tends to show them"; save()
+            return self._send(200, j)
         if u.path == "/api/cancel":
             j = JOBS.get(b.get("id"))
             if not j: return self._send(404, {"error": "no such job"})
@@ -1338,9 +1529,7 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/api/delete":
             j = JOBS.get(b.get("id"))
             if not j or j["status"] in ("queued", "waiting_gpu", "running"): return self._send(409, {"error": "only finished renders can be deleted"})
-            shutil.rmtree(f"{LIB}/{j['id']}", ignore_errors=True)
-            with LOCK: JOBS.pop(j["id"], None)
-            save(); return self._send(200, {"ok": True})
+            return self._send(200, trash_job(j))                              # to the Trash, not deleted
         if u.path == "/api/gpu/free":
             if b.get("confirm") != "tf": return self._send(400, {"error": "confirm with {confirm: 'tf'}"})
             return self._send(200, free_gpu())
@@ -1349,11 +1538,20 @@ class H(BaseHTTPRequestHandler):
             url = str(b.get("url") or "").strip()
             if not re.match(r"^https://(www\.|m\.)?(youtube\.com/(shorts/|watch\?v=)|youtu\.be/)[\w-]{6,}", url): return self._send(400, {"error": "paste a YouTube Shorts (or YouTube video) link"})
             if b.get("consent") is not True: return self._send(400, {"error": "confirm you have the right to use this person's voice"})
-            return self._send(200, new_job("voice", {"url": url, "who": str(b.get("who") or "")[:200], "label": str(b.get("label") or "")[:60]}))
+            vp = {"url": url, "who": str(b.get("who") or "")[:200], "label": str(b.get("label") or "")[:60]}
+            if b.get("multi") is True:                                         # everyone who speaks: speakers 0 = auto, else the user's count
+                vp.update(multi=True, max_speakers=6, speakers=max(0, min(6, int(b.get("speakers") or 0))))
+            return self._send(200, new_job("voice", vp))
         if u.path == "/api/voices/delete":
             vid = str(b.get("id") or "")
             if not re.match(r"^[\w-]+$", vid) or not os.path.isdir(f"{VOICES}/{vid}"): return self._send(404, {"error": "no such voice"})
-            shutil.rmtree(f"{VOICES}/{vid}"); return self._send(200, {"ok": True})
+            return self._send(200, trash_voice(vid))
+        if u.path == "/api/trash/restore":
+            try: return self._send(200, trash_restore(str(b.get("id") or "")))
+            except (ValueError, OSError) as e: return self._send(400, {"error": str(e)})
+        if u.path == "/api/trash/empty":
+            if b.get("confirm") != "empty": return self._send(400, {"error": "confirm with {confirm: 'empty'}"})
+            return self._send(200, trash_empty(b.get("id")))
         if u.path in ("/api/edit/save", "/api/edit/rerender", "/api/edit/export"):
             try:
                 fj = film_job(str(b.get("id") or ""))
@@ -1394,6 +1592,7 @@ def main():
         if j["status"] == "running": j.update(status="failed", error="the studio restarted during this render")
     save(); WS.start(); threading.Thread(target=worker, daemon=True).start()
     if lr_ready() and lr_can_stop() and LR_IDLE_S > 0: threading.Thread(target=lr_idle, daemon=True).start()   # stops an idle LocalRouter
+    threading.Thread(target=mem_guard, daemon=True).start(); comfy_oom_first()  # the memory guard
     srv = ThreadingHTTPServer((C.HOST, PORT), H); print(f"Lion AI Studios on http://{C.HOST}:{PORT}", flush=True); srv.serve_forever()
 
 

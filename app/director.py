@@ -70,6 +70,8 @@ def _ask(base, model, messages, **kw):
 
 WRITE_SYS = ("You are a film director writing prompts for MiniMax-H3, a text-to-video model that makes picture AND sound together. "
              "Write concrete, filmable prose: subject, setting, light, lens and camera move; dialogue in quotes; sounds named plainly. "
+             "Describe only what IS there: the model has no negative prompt and tends to show whatever is named, so never name a thing to say it is "
+             "absent (write 'an empty street', not 'no cars'; 'one continuous shot', not 'no cuts'). "
              "Reply with JSON only.")
 
 
@@ -194,7 +196,8 @@ def describe_shot(clip_path, words, notes="", has_cast=True):
     change = f"Changes the user wants in the remake: {notes}" if notes.strip() else "Keep everything as close to the original as you can."
     msg = [{"role": "user", "content": [{"type": "video_url", "video_url": {"url": "data:video/mp4;base64," + v}},
             {"type": "text", "text": "You are remaking this shot of a short video with a new actor, for a text-to-video model that makes picture and sound. "
-             f"{who} Keep the setting, framing, lens, light, camera movement, action, timing and mood. {said} {change}\n\n"
+             f"{who} Keep the setting, framing, lens, light, camera movement, action, timing and mood. {said} {change} "
+             "Describe only what IS there — the video model shows whatever is named, so never name a thing to say it is absent.\n\n"
              "Reply JSON only: {\"picture\": \"40-90 words: who/what is in frame, where, light, lens\", \"action\": \"what happens and how the camera moves\", "
              "\"sound\": \"ambience and music only, not the spoken words\"}"}]}]
     t = time.time(); d = _ask(DIRECTOR, C.DIRECTOR_MODEL, msg, max_tokens=500, temperature=0.3)
@@ -241,6 +244,21 @@ def check_frame(image_path, who):
              max_tokens=200, temperature=0.1)
     return {"present": d.get("present") is True, "face_visible": d.get("face_visible") is True, "where": str(d.get("where") or ""),
             "expression": str(d.get("expression") or ""), "makeup": str(d.get("makeup") or "none")}
+
+
+def name_speaker(frames, words, title=""):
+    """who is this voice? frames = stills taken while ONLY this speaker talks; words = what they say.
+    -> {label: a short name for the Voices tab, name: their name if they name themselves, else "", looks: a few words}"""
+    if not ensure(): raise RuntimeError("the director is not running")
+    content = [{"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(open(f, "rb").read()).decode()}} for f in frames[:3]]
+    content.append({"type": "text", "text": f"Video: \"{title}\". These frames were taken while one person was speaking; what they said: \"{words[:600]}\"\n"
+                    "Who is speaking? Give a name ONLY if the speaker names THEMSELVES (\"I'm Tony\", \"my name is ...\") or a caption names them; a name the speaker "
+                    "says about someone else (\"this is my son Tony\", \"Jessica, ...\") is NOT their name. Never guess a name from a face. "
+                    "If the frames show someone else (a listener, a picture, text), say what the voice seems to be (a host off camera, a narrator). "
+                    "Reply JSON only: {\"name\": \"their name or empty\", \"looks\": \"4-10 words: what the speaker looks like or their role\", "
+                    "\"label\": \"2-5 words for a voice list, e.g. the name, or 'Host in blue jacket'\"}"})
+    d = _ask(DIRECTOR, C.DIRECTOR_MODEL, [{"role": "user", "content": content}], max_tokens=160, temperature=0.2)
+    return {"label": str(d.get("label") or "").strip()[:40], "name": str(d.get("name") or "").strip()[:60], "looks": str(d.get("looks") or "").strip()[:100]}
 
 
 # MIDI arranging ──────────────────────────────────────────────────────────────────────────────────────────────────────────

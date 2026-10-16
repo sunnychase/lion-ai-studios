@@ -44,12 +44,22 @@ TENANT_START = E("GPU_TENANT_START", "")                   # shell command that 
 NEED_GIB = float(E("STUDIO_NEED_GIB", "55"))               # free unified memory a render needs before ComfyUI is up
 HOT_C = float(E("STUDIO_HOT_C", "95"))                     # pause between segments at this board temperature...
 COOL_C = float(E("STUDIO_COOL_C", "85"))                   # ...and resume below this one
+# memory guard while a ComfyUI render runs (the Spark's GPU and system share one pool; an overrun freezes the whole box):
+MEM_FLOOR_GIB = float(E("STUDIO_MEM_FLOOR_GIB", "6"))      # below this much free memory the render is interrupted and the job fails with the reason
+MEM_CRIT_GIB = float(E("STUDIO_MEM_CRIT_GIB", "3"))        # below this (or falling to it within ~1 s) ComfyUI is also stopped outright
 
 # ── helper environments ────────────────────────────────────────────────────────────────────────────────────
 TTS_PY = _p(E("STUDIO_TTS_PY", os.path.join(STUDIO_HOME, "envs/tts/bin/python")))     # qwen-tts, demucs, Whisper, yt-dlp
 MIDI_PY = _p(E("STUDIO_MIDI_PY", os.path.join(STUDIO_HOME, "envs/midi/bin/python")))  # mido + tinysoundfont
 SF2 = _p(E("STUDIO_SF2", os.path.join(MODELS, "soundfonts/MuseScore_General.sf2")))
 TF_LIB = _p(E("TENSORFOLD_LIB", os.path.join(COMFY_DIR, "custom_nodes/tensorfold_h3/libtf_h3.so")))  # optional engine
+DENO_BIN = E("DENO_BIN", "")                               # a Deno binary for yt-dlp's YouTube JS challenges; empty = `deno` on PATH, if any
+TRASH = os.path.join(STUDIO_HOME, "trash")                  # deleted renders and voices wait here until the Trash is emptied
+
+# ── optional: Fish Audio Drama 3 voice engine (TensorFold's CUDA port; see docs/DRAMA3.md) — Built with Fish Audio ──────────────────
+# The narrator's "Voice engine" menu offers it only when the engine and the weights are both found.
+DRAMA3_DIR = _p(E("DRAMA3_DIR", "~/.local/opt/tensorfold-studio/drama3"))   # bin/drama3-generate, lib/libtensorfold_drama3.so, codec-v1.safetensors
+DRAMA3_MODEL = _p(E("DRAMA3_MODEL", os.path.join(MODELS, "drama-3")))       # huggingface.co/fishaudio/drama-3 (Fish Audio Community License)
 
 # ── optional: Ming-Image-0.1-Design (runs outside ComfyUI, in its own venv; see docs/MING.md) ──────────────────────────────────
 # The Image menu lists it only when the weights, the official code and the venv are all found.

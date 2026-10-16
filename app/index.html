@@ -204,7 +204,8 @@ audio{height:34px}
       <select id="vmusic"><option value="">No music</option><option value="fast">Fast · ACE-Step</option><option value="best">Best · MiniMax Music 3</option></select></div>
       <div class="two" style="gap:10px"><div><div class="lbl">Style <span class="dim">— blank: the director writes it</span></div><input id="vmstyle" placeholder="tense strings, slow build"></div>
         <div><div class="lbl">Level</div><select id="vmlevel"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option></select></div></div></div>
-    <div id="vobox" class="two" style="margin-top:14px"><div><div class="lbl">Narrator</div><select id="vovoice"><option value="">No voice-over</option></select></div>
+    <div id="vobox" class="two" style="margin-top:14px"><div><div class="lbl">Narrator</div><select id="vovoice"><option value="">No voice-over</option></select>
+      <div class="lbl" style="margin-top:8px">Voice engine</div><select id="voengine"><option value="qwen">Qwen3-TTS — fast</option><option value="drama3">Fish Audio Drama 3 — most natural (needs the GPU free) · Built with Fish Audio</option></select></div>
       <div><div class="lbl">Narration <span class="dim">— the film's sound dips under it</span></div><textarea id="volines" style="min-height:58px" placeholder="What the narrator says…"></textarea></div></div>
     <div id="voclone" style="margin-top:10px">
       <div class="row"><button class="ghost sm" type="button" onclick="$('voform').classList.toggle('hide')">＋ Clone a narrator voice from a YouTube Short</button><span id="vomsg" class="dim" style="font-size:12.5px"></span></div>
@@ -233,7 +234,9 @@ audio{height:34px}
 </section>
 
 <section id="t-queue" class="panel hide"><div id="jobs"></div></section>
-<section id="t-library" class="panel hide"><div class="filters" id="libf"></div><div class="lib" id="lib"></div></section>
+<section id="t-library" class="panel hide"><div class="filters" id="libf"></div><div class="lib" id="lib"></div>
+  <details class="sec" id="trashbox" ontoggle="if(this.open)drawTrash()"><summary style="cursor:pointer"><b>Trash</b> <span class="dim" id="trashn"></span> <span class="dim">— deleted renders and voices; restore them, or delete them for good</span></summary>
+    <div id="trashlist" style="margin-top:10px"></div><div class="row" style="margin-top:8px"><button class="ghost sm" onclick="emptyTrash()">Empty the Trash</button><span id="trasherr" class="err"></span></div></details></section>
 
 <section id="t-edit" class="panel hide">
   <div class="sec"><header><div style="flex:1"><h2 id="ed-title">Editor</h2><p id="ed-sub"></p></div><button class="ghost sm" onclick="tab('library')">Back to Library</button></header>
@@ -306,7 +309,9 @@ audio{height:34px}
   <div class="sec"><header><span class="n">+</span><h2>Add a voice</h2><p>paste a Short; the director finds the person speaking on their own and Qwen3-TTS learns the voice (1–3 min)</p></header>
     <div class="two"><div><div class="lbl">YouTube Shorts link</div><input id="vurl" placeholder="https://youtube.com/shorts/…"></div>
       <div><div class="lbl">Whose voice <span class="dim">— optional, e.g. “the woman in the red jacket”</span></div><input id="vwho"></div></div>
-    <div class="two"><div><div class="lbl">Name</div><input id="vlabel" placeholder="Narrator"></div>
+    <div class="row" style="margin:8px 0 2px"><label class="check"><input type="checkbox" id="vmulti" onchange="$('vwho').disabled=this.checked"> Clone <b>everyone who speaks</b> — each person becomes a voice of their own (up to 6; each needs ~5 s of speech)</label>
+      <select id="vcount" style="width:auto;margin-left:10px" title="How many people speak"><option value="0">How many people? Auto</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></div>
+    <div class="two"><div><div class="lbl">Name</div><input id="vlabel" placeholder="Narrator (with “everyone”: a prefix, e.g. Podcast)"></div>
       <div style="align-self:end"><label class="check"><input type="checkbox" id="vconsent"> I have the right to use this person's voice — my own, with their consent, or licensed</label></div></div>
     <div class="row" style="margin-top:12px"><button onclick="addVoice()">Pull this voice</button><span id="verr" class="err"></span></div></div>
   <div id="vlist"></div>
@@ -384,18 +389,18 @@ async function upload(inp){const f=inp.files[0];if(!f)return;const r=await fetch
  if(j.error){alert(j.error);return;}FIRST=j.file;F.start="own";draw();inp.value="";}
 function body(){const [w,h]=$("ishape").value.split("x");if(F.mode=="image"&&EDITS.length)return {mode:"edit",images:EDITS,model:$("imodel").value,picture:$("picture").value,count:+$("icount").value,seed:$("seed").value.trim(),preset:F.preset};return {mode:F.mode=="video"&&F.start=="keys"?"keyframes":F.mode=="image"||F.start=="scout"&&!FIRST?"image":"video",images:KEYS,gap:+$("gap").value,preset:F.preset,seconds:+$("len").value,seed:$("seed").value.trim(),
   picture:$("picture").value,action:$("action").value,sound:$("sound").value,beats:(F.start=="keys"||+$("len").value>15)?$("beats").value:"",model:F.mode=="video"?(S.image_preset[F.preset]||$("imodel").value):$("imodel").value,layout:$("mlayout").checked,alpha:$("malpha").checked,iengine:F.mode=="image"?$("iengine").value:"comfy",w,h,count:F.start=="scout"&&F.mode=="video"?4:+$("icount").value,
-  first_image:FIRST||"",review:$("review").value,engine:$("engine").value,vae8:$("vae8").checked,voice:$("vovoice").value,vo:$("volines").value,music:$("vmusic").value,music_style:$("vmstyle").value,music_level:$("vmlevel").value,cast_images:F.start=="keys"?[]:CAST,cast_consent:$("castok").checked,cast_voice:F.start=="keys"?"":$("castvoice").value,cast_lines:$("castlines").value,prompt:!$("reviewbox").classList.contains("hide")?$("prompt").value:""};}
+  first_image:FIRST||"",review:$("review").value,engine:$("engine").value,vae8:$("vae8").checked,voice:$("vovoice").value,vo:$("volines").value,vo_engine:$("voengine").value,music:$("vmusic").value,music_style:$("vmstyle").value,music_level:$("vmlevel").value,cast_images:F.start=="keys"?[]:CAST,cast_consent:$("castok").checked,cast_voice:F.start=="keys"?"":$("castvoice").value,cast_lines:$("castlines").value,prompt:!$("reviewbox").classList.contains("hide")?$("prompt").value:""};}
 function review(){const p=[$("picture").value.trim(),$("action").value.trim(),$("sound").value.trim()?"Sound: "+$("sound").value.trim():""].filter(Boolean).join("\n\n");$("prompt").value=p;$("reviewbox").classList.remove("hide");}
 async function queue(){$("cerr").textContent="";const b=body();if(!b.picture.trim()&&!b.prompt.trim()){$("cerr").textContent="Write what the picture shows first.";return;}
  const [s,j]=await api("/api/jobs",b);if(s!=200){$("cerr").textContent=j.error||("HTTP "+s);return;}tab("queue");load();}
 function jobHtml(j){const p=j.progress||{},pct=p.steps?Math.round(100*((p.seg-1)+(p.step||0)/p.steps)/Math.max(1,p.segs)):(j.status=="done"?100:0);
- const what=j.kind=="edit"?`Edit · ${(j.params.images||[]).length} image(s) · ${j.params.count} result(s)`:j.kind=="recreate"?`Recreate${j.params.title?" · “"+esc(j.params.title.slice(0,50))+"”":""} · up to ${j.params.max_seconds} s${j.params.shots?" · "+j.params.shots.length+" shots":""}`:j.kind=="retake"?`Re-render · segment ${j.params.seg} of a film`:j.kind=="export"?`Export · new version of a film`:j.kind=="music"?`Music · ${esc((S.music_engines||{})[j.params.engine]||j.params.engine)} · ${j.params.seconds} s${(j.params.lyrics||"").trim()?" · song":" · instrumental"}`:j.kind=="voice"?`Voice from ${esc(j.params.url)}${j.params.who?` · ${esc(j.params.who)}`:""}`:j.kind=="image"?`Image · ${esc(j.params.model)} · ${j.params.count}${j.params.iengine=="localrouter"?" · Fast":""}`:`${j.kind=="chain"?"Film":j.kind=="keyframes"?"Keyframe film":"Video"} · ${esc(j.params.preset)} · ${j.params.seconds} s${j.kind=="chain"?` · ${p.segs} segments`:""}`;
+ const what=j.kind=="edit"?`Edit · ${(j.params.images||[]).length} image(s) · ${j.params.count} result(s)`:j.kind=="recreate"?`Recreate${j.params.title?" · “"+esc(j.params.title.slice(0,50))+"”":""} · up to ${j.params.max_seconds} s${j.params.shots?" · "+j.params.shots.length+" shots":""}`:j.kind=="retake"?`Re-render · segment ${j.params.seg} of a film`:j.kind=="export"?`Export · new version of a film`:j.kind=="music"?`Music · ${esc((S.music_engines||{})[j.params.engine]||j.params.engine)} · ${j.params.seconds} s${(j.params.lyrics||"").trim()?" · song":" · instrumental"}`:j.kind=="voice"?`${j.params.multi?"Voices (everyone who speaks)":"Voice"} from ${esc(j.params.url)}${j.params.who?` · ${esc(j.params.who)}`:""}${j.voices?` · ${j.voices.length} made`:""}`:j.kind=="image"?`Image · ${esc(j.params.model)} · ${j.params.count}${j.params.iengine=="localrouter"?" · Fast":""}`:`${j.kind=="chain"?"Film":j.kind=="keyframes"?"Keyframe film":"Video"} · ${esc(j.params.preset)} · ${j.params.seconds} s${j.kind=="chain"?` · ${p.segs} segments`:""}`;
  return `<div class="job"><div class="row" style="justify-content:space-between"><div><b>${what}</b> <span class="st st-${j.status}">${esc(j.status.replace("_"," "))}</span></div>
   <div class="row">${["queued","waiting_gpu","running"].includes(j.status)?`<button class="ghost sm" onclick="cancelJ('${j.id}')">Cancel</button>`:`<button class="ghost sm" onclick="del('${j.id}')">Delete</button>`}</div></div>
   <div class="dim" style="font-size:12.5px;margin-top:3px">${esc((j.params.prompt||j.params.picture||"").slice(0,180))}</div>
   ${j.status=="running"||j.status=="waiting_gpu"?`<div class="prog"><i style="width:${pct}%"></i></div><div class="dim" style="font-size:12.5px">${esc(p.phase||"")}${p.steps?` · step ${p.step}/${p.steps}`:""}${p.engine?` · ${esc(p.engine)}`:""}${j.est_s?` · ≈ ${fmtT(j.est_s)} in all`:""}</div>`:""}
   ${rvHtml(j)}${j.notes?`<div class="dim" style="font-size:12px;margin-top:3px">${esc(j.notes)}</div>`:""}${j.error?`<div class="err" style="font-size:12.5px">${esc(j.error)}</div>`:""}</div>`;}
-async function addVoice(){$("verr").textContent="";const [s,j]=await api("/api/voices",{url:$("vurl").value.trim(),who:$("vwho").value.trim(),label:$("vlabel").value.trim(),consent:$("vconsent").checked});
+async function addVoice(){$("verr").textContent="";const multi=$("vmulti").checked;const [s,j]=await api("/api/voices",{url:$("vurl").value.trim(),who:multi?"":$("vwho").value.trim(),label:$("vlabel").value.trim(),consent:$("vconsent").checked,multi,speakers:+$("vcount").value});
  if(j.error){$("verr").textContent=j.error;return;}$("vurl").value="";tab("queue");load();}
 let VOPEND=LS("studio_vopend",null);   // a narrator voice being cloned from the Video tab: {id, label}; a voice's id is its job id
 async function cloneVo(){$("vomsg").textContent="";const label=$("volabel").value.trim();
@@ -409,7 +414,7 @@ function voState(){if(!VOPEND||!S)return;const j=(S.jobs||[]).find(x=>x.id==VOPE
   if($("vovoice").value==VOPEND.id)$("vovoice").value="";VOPEND=null;SS("studio_vopend",null);drawVoices();
   $("vomsg").innerHTML=`<span class=err>cloning failed: ${esc(why)} — narrator reset; a film already queued with it will stop before rendering</span>`;return;}
  $("vomsg").textContent=`cloning “${VOPEND.label}” · ${j.status=="running"?((j.progress||{}).phase||"working"):"queued"}`;}
-async function delVoice(id){if(!confirm("Delete this voice (its reference clip and preview) from the Spark?"))return;await api("/api/voices/delete",{id});load();}
+async function delVoice(id){if(!confirm("Move this voice to the Trash? (Library → Trash can bring it back)"))return;await api("/api/voices/delete",{id});load();}
 let VSIG="";function drawVoices(){const V=S.voices||[];$("vn").textContent=V.length;const sig=V.map(v=>v.id).join(",");
  const sel=$("vovoice"),cur=sel.value,pend=VOPEND&&!V.some(v=>v.id==VOPEND.id)?VOPEND:null,vsig=sig+(pend?"|"+pend.id:"");   // a voice still being cloned is listed too
  if(sel.dataset.sig!=vsig){sel.innerHTML=`<option value="">No voice-over</option>`+V.map(v=>`<option value="${esc(v.id)}">${esc(v.label)}</option>`).join("")+(pend?`<option value="${esc(pend.id)}">⏳ ${esc(pend.label)} (cloning…)</option>`:"");sel.value=cur;sel.dataset.sig=vsig;}
@@ -532,7 +537,11 @@ function animate(path){if(F.mode=="video"&&F.start=="keys"){if(KEYS.length<12){K
 async function cancelJ(id){if(!confirm("Cancel this render?"))return;await api("/api/cancel",{id});load();}
 async function clearDead(){const ids=S.jobs.filter(j=>["failed","cancelled"].includes(j.status)).map(j=>j.id);if(!ids.length||!confirm(`Remove ${ids.length} failed or cancelled item(s) from the queue?`))return;
  for(const id of ids)await api("/api/delete",{id});load();}
-async function del(id){if(!confirm("Delete this render and its files from the Spark?"))return;const [s,j]=await api("/api/delete",{id});if(j.error)alert(j.error);load();}
+async function drawTrash(){const r=await fetch("/api/trash",{headers:{"X-Studio":"1"}}),t=(await r.json()).items||[];$("trashn").textContent=t.length?`(${t.length})`:"";
+ $("trashlist").innerHTML=t.length?t.map(x=>`<div class="job"><div class="row" style="justify-content:space-between"><span><b>${x.kind=="voice"?"Voice":esc(x.job_kind||"render")}</b> · ${esc(x.label||x.id)} <span class="dim">· moved ${esc(x.trashed)}</span></span><span class="row"><button class="ghost sm" onclick="restoreTrash('${esc(x.trash_id)}')">Restore</button><button class="ghost sm" onclick="emptyTrash('${esc(x.trash_id)}')">Delete for good</button></span></div></div>`).join(""):`<div class="empty">The Trash is empty.</div>`;}
+async function restoreTrash(id){const [s,j]=await api("/api/trash/restore",{id});$("trasherr").textContent=j.error||"";drawTrash();load();}
+async function emptyTrash(id){if(!confirm(id?"Delete this item for good? This cannot be undone.":"Delete everything in the Trash for good? This cannot be undone."))return;await api("/api/trash/empty",{confirm:"empty",id:id||null});drawTrash();}
+async function del(id){if(!confirm("Move this render to the Trash? (Library → Trash can bring it back)"))return;const [s,j]=await api("/api/delete",{id});if(j.error)alert(j.error);load();}
 const TN=()=>(S&&S.gpu&&S.gpu.tenant)||"the other GPU service";
 async function freeGpu(){if(!confirm(`Stop ${TN()} so the studio can render?\n\nYou can start it again here after the renders.`))return;
  const [s,j]=await api("/api/gpu/free",{confirm:"tf"});if(j.error)alert(j.error);load();}
@@ -545,6 +554,7 @@ function banner(){const g=S.gpu,waiting=S.jobs.some(j=>j.status=="waiting_gpu"),
  const hh=g.heat||{},hot=(hh.board||0)>=90;$("hw").innerHTML=`<span class="chip"><i class="dot ${g.tf?"amber":g.comfy?"on":""}"></i>${g.tf?esc(TN())+" is running":g.comfy?"Renderer ready":"GPU idle"}</span><span class="chip">${g.mem} GiB free</span>
   <span class="chip" style="${hot?"color:#f6a7a7;border-color:rgba(240,122,122,.45)":""}">board ${hh.board?Math.round(hh.board):"–"}° · GPU ${hh.gpu??"–"}°${hh.throttle?" · THROTTLING":""}</span>`;}
 async function load(){try{const r=await fetch("/api/state");S=await r.json();}catch(e){return;}
+ {const d3=document.querySelector('#voengine option[value="drama3"]');if(d3){d3.disabled=!S.drama3_ready;if(!S.drama3_ready&&$("voengine").value=="drama3")$("voengine").value="qwen";}}   /* optional engine: offered only when installed (docs/DRAMA3.md) */
  const act=S.jobs.filter(j=>!["done"].includes(j.status)),done=S.jobs.filter(j=>j.status=="done"&&!["voice","retake","export"].includes(j.kind));$("qn").textContent=act.filter(j=>j.status!="failed"&&j.status!="cancelled").length;$("ln").textContent=done.length;
  const dead=act.filter(j=>["failed","cancelled"].includes(j.status));
  $("jobs").innerHTML=(dead.length>1?`<div class="row" style="justify-content:flex-end;margin-bottom:8px"><button class="ghost sm" onclick="clearDead()">Clear failed (${dead.length})</button></div>`:"")+
@@ -559,6 +569,14 @@ $("iengine").addEventListener("change",()=>{const m=((S&&S.lr_models)||[])[0],sz
 $("imodel").addEventListener("change",()=>{F.imodelTouched=true;draw();});$("icount").addEventListener("change",draw);$("malpha").addEventListener("change",draw);$("mlayout").addEventListener("change",draw);
 {const h=location.hash.slice(1);tab(["video","image","queue","library","voices","music","recreate"].includes(h)?h:h=="create"?F.mode:F.mode||"video");}   /* a link can open a tab: #queue, #library */
 load();setInterval(load,3000);
+
+/* the video and image models here have no negative prompt — warn when a prompt names a thing to forbid it */
+(function(){const ids=["picture","action","sound","beats","prompt"],T={};
+ for(const id of ids){const el=document.getElementById(id);if(!el)continue;const w=document.createElement("div");w.id="ng-"+id;w.className="dim";w.style.cssText="font-size:12px;color:#d8b46a;margin:4px 0 0";el.insertAdjacentElement("afterend",w);
+  const run=async()=>{const t=el.value||"";if(!/\b(no|not|never|without|nobody|none|neither|nor|cannot|\w+n't)\b/i.test(t)){w.textContent="";return;}
+   const [s,j]=await api("/api/negation",{text:t});const n=(j&&j.negations)||[];
+   w.innerHTML=n.length?`⚠ ${n.slice(0,4).map(x=>"“"+esc(x.phrase)+"”").join(", ")} — the model tends to show what a prompt names, even to forbid it. Say what is there instead (e.g. “plain walls”, “one continuous shot”).`:"";};
+  el.addEventListener("input",()=>{clearTimeout(T[id]);T[id]=setTimeout(run,700);});run();}})();
 </script>
 </body>
 </html>

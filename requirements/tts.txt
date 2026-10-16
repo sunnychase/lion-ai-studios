@@ -7,3 +7,5 @@ accelerate==1.12.0
 soundfile==0.14.0
 yt-dlp==2026.8.19
 yt-dlp-ejs==0.8.0
+scikit-learn==1.9.1    # telling voices apart (voice.py speakers); also comes with librosa
+# numpy and Pillow (both installed with the packages above) also run the shot check (app/shot.py) when the studio's own python lacks them

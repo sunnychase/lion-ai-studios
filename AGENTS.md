@@ -18,6 +18,7 @@ renderer, plus a director model and a few helper runners. See [How it works](REA
 | `app/studio_broker.py` | the memory broker: who holds memory, and freeing idle holders before a big load |
 | `app/voice.py`, `app/midi_tool.py`, `app/ming_runner.py` | helpers that run in their own Python environments |
 | `app/music.py`, `app/stitch.py` | music graphs and ffmpeg joins |
+| `app/negation.py`, `app/shot.py`, `app/wordcheck.py` | prompt negation check, frame-level shot check, spoken-word check; Apache-2.0 files from another repository (see NOTICE.md), keep their headers. `shot.py` needs numpy/Pillow only when it runs: the server calls it in-process if those exist, else in the voice venv |
 | `app/index.html` | the whole page: HTML, CSS and JavaScript in one file, served fresh on every request |
 | `comfyui_nodes/` | the studio's image node for ComfyUI |
 | `scripts/` | install, download, helper environments, services, and `check.sh` |

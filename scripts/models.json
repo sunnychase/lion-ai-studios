@@ -452,5 +452,17 @@
   "bytes": 1700000000,
   "license": "mit",
   "what": "Whisper transcription (whole repo)"
+ },
+ {
+  "group": "drama3",
+  "tier": "optional",
+  "dest": "studio:drama-3",
+  "repo": "fishaudio/drama-3",
+  "rev": "e0a9218aa48888270f06ef1ed9ea67622c0e17d2",
+  "path": "*",
+  "bytes": 41502593757,
+  "explicit": true,
+  "license": "Fish Audio Community License v1.0 (other)",
+  "what": "Fish Audio Drama 3 voice engine (whole repo; only with --group drama3; see docs/DRAMA3.md)"
  }
 ]

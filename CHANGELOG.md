@@ -2,6 +2,39 @@
 
 Updates to Lion AI Studios, newest first. The project has no version numbers; each entry is dated.
 
+## 2026-10-16 — Voices for everyone who speaks, Fish Audio Drama 3, shot and word checks, Trash, memory guard
+
+Several of these come from [drowzeys/keys-Wasserman-Slate-AI-Studio-powered-by-TensorFold-built-with-integrated-Fish-Audio-Drama3](https://github.com/drowzeys/keys-Wasserman-Slate-AI-Studio-powered-by-TensorFold-built-with-integrated-Fish-Audio-Drama3)
+(Apache-2.0): three files copied with credit, three ideas rewritten for this studio. See NOTICE.md.
+
+- **Clone everyone who speaks.** The Voices tab can turn every person in one video into a voice of their own (up to 6): phrases are
+  fingerprinted with Qwen3-TTS's speaker encoder and grouped; each reference is that person's longest solo stretch (or a few of their own
+  turns joined) and is transcribed again from its own clip; the director names each voice from frames taken while that person speaks.
+  *How many people?* overrides the automatic count. Single-voice references are now also re-transcribed from their own clip.
+- **Word check for every spoken take** (`app/wordcheck.py`, copied). Whisper listens to each Qwen3-TTS take; a take that drops words,
+  loses its ending or reads reference words before or after the line is drawn again (up to 3 takes), with a last x-vector-only take that
+  cannot read the reference aloud. The voice-over job records the check.
+- **Fish Audio Drama 3** (optional narrator engine, *Voice engine* menu; Built with Fish Audio). TensorFold's native CUDA port
+  (`drama3-cuda` branch), one process per take, the same word check. Weights opt-in (`--group drama3`, 41.5 GB, Fish Audio Community
+  License); build steps in docs/DRAMA3.md. New settings `DRAMA3_DIR`, `DRAMA3_MODEL`.
+- **Shot check** (`app/shot.py`, copied and modified). Every take is frame-checked for a hard cut inside a one-shot clip and, in keyframe
+  films, for a clip that does not open or close on its pictures; a failure triggers the single re-take, and a take that passes wins.
+- **Negation warning** (`app/negation.py`, adapted). The page flags prompt phrases that name a thing to forbid it ("no cars"), `POST
+  /api/negation` does the check, and queued jobs note them. The studio's own prompts (portrait card, face swap, Faithful continuity)
+  now say what is there instead, and the director is told to write that way.
+- **Edit noise seed.** Image edits draw their noise from the seed and the input pictures' bytes (the job records it), so an edit that
+  reuses its source's seed no longer drifts back to the source.
+- **Memory guard.** While a ComfyUI render runs, free memory is read 4x/s: under `STUDIO_MEM_FLOOR_GIB` (6) the render is interrupted
+  and the job fails with the reason; under `STUDIO_MEM_CRIT_GIB` (3), or falling to it within a second, ComfyUI is stopped too. ComfyUI
+  is also made the kernel's first choice if memory runs out.
+- **Trash.** Deleting a render or a voice moves it to `$STUDIO_HOME/trash/`; Library → Trash restores it or deletes it for good
+  (`GET /api/trash`, `POST /api/trash/restore`, `POST /api/trash/empty`). The delete prompts say so.
+- **YouTube downloads** pass `--js-runtimes deno` when a Deno binary is configured (`DENO_BIN`) or on PATH, and retry a 403 up to 3 times;
+  `yt-dlp-ejs` supplies the solver scripts.
+- `scripts/download_models.py`: entries may pin a revision (`rev`) and be opt-in (`explicit`, left out of `--all`).
+- NOTICE.md: the TensorFold H3 node's repository was renamed upstream; the TensorFold engine is Apache-2.0 (ashhart/TensorFold; the
+  h3-cuda and drama3-cuda branches of the drowzeys fork carry it), not MIT as listed before.
+
 ## 2026-10-15 — FLUX 3 Image Klein
 
 - **FLUX 3 Image Klein** (Black Forest Labs, 5.6B, distilled, bf16) is a new optional image model, at BFL's own ComfyUI recipe: 16 steps,

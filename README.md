@@ -36,7 +36,7 @@ Video with sound · images · music · voices · a director that writes and revi
 git clone https://github.com/sunnychase/lion-ai-studios.git && cd lion-ai-studios
 cp studio.env.example studio.env            # edit paths, ports and the director's address
 ./scripts/install_comfyui.sh                # ComfyUI at the tested commit, its venv, and the studio's image node
-python3 scripts/download_models.py          # core models, ~122 GB (--list to see everything, --all for ~331 GB)
+python3 scripts/download_models.py          # core models, ~122 GB (--list to see everything, --all for ~373 GB)
 ./scripts/setup_envs.sh                     # optional: voice + MIDI helper environments
 ./scripts/install_services.sh               # systemd --user units; open http://127.0.0.1:8482
 ```
@@ -70,7 +70,7 @@ destination folder and licence. Short version:
 | **Hardware** | NVIDIA **DGX Spark** (GB10 Grace Blackwell, **128 GB unified memory**, aarch64). Video uses ~55 GB while rendering; the director needs ~19 GB more. Other GB10 machines with 128 GB should work but are untested. |
 | **OS** | DGX OS / Ubuntu 24.04, NVIDIA driver 580+, CUDA 13.0 |
 | **Disk** | ~150 GB for the core models, ~360 GB for everything, plus room for your library. Use the internal NVMe: models must not run off network storage. |
-| **Software** | Python 3.12, `ffmpeg` 6.x or newer (tested 6.1.1, the Ubuntu 24.04 / DGX OS package; 4.4 pads Faithful shots short), `git`, `curl`; Docker only for the TensorFold director recipe |
+| **Software** | Python 3.12, `ffmpeg` 6.x or newer (tested 6.1.1, the Ubuntu 24.04 / DGX OS package; 4.4 pads Faithful shots short), `git`, `curl`; Docker only for the TensorFold director recipe; [Deno](https://deno.com) (optional, recommended) as yt-dlp's JavaScript runtime, which YouTube downloads now need (`DENO_BIN` or `deno` on PATH) |
 | **Renderer** | ComfyUI pinned to commit `b26625f2` (v0.39.0 + 18), PyTorch 2.10 + cu130 |
 
 ### Configuration
@@ -111,13 +111,41 @@ Everything machine-specific comes from `studio.env` through `app/config.py`.
 | **Image** | Twelve image models behind one menu: **FLUX 3 Image Klein** (new: Black Forest Labs' 5.6B model with its own prompt upsampler), Z-Image-Turbo, Qwen-Image 2.1 Turbo (2K, best at text), Krea 2, FLUX.2 klein, HiDream-O1, Chroma and more. **Edit** any image by describing the change (Qwen-Image 2.1 Turbo or FLUX 3 Image Klein, up to 4 input images). Optional **Ming-Image 0.1 Design** for posters, UI screens and infographics, with a transparent-background option: the director lays out the design with Ming's own rewriter first ([setup](docs/MING.md)). Optional **Fast** engine: Qwen-Image 2.1 Turbo through [LocalRouter](https://github.com/jayleaton/localrouter) at 1024×1024, about 6 s instead of 9 s warm, falling back to ComfyUI on its own ([setup](docs/FAST_IMAGES.md)). |
 | **Music** | **Fast**: ACE-Step 1.5 Turbo, a minute of music in seconds, with lyrics. **Best**: MiniMax Music 3. **MIDI**: attach a `.mid`, pick an instrument for every part (all 128 General MIDI instruments and 8 drum kits), or describe the sound you want ("jazz trio with brushed drums") and let the **director arrange it**: it picks an instrument or kit for every part, mutes what does not fit, and turns on the AI restyle when instruments alone cannot get there. |
 | **Director** | A vision-language model (Qwen3.8-27B) turns one sentence into a shot prompt with one beat per segment, **watches every rendered segment**, scores it, and re-takes a weak one once. It also picks out the performer in a Short, checks every frame Recreate swaps, and arranges MIDI files from a description. |
-| **Voices** | Clone a voice from a short clip (Qwen3-TTS) for narration or on-camera lines, from the Voices tab or right inside the Video builder's voice-over section. |
+| **Voices** | Clone a voice from a short clip (Qwen3-TTS) for narration or on-camera lines, from the Voices tab or right inside the Video builder's voice-over section. Clone **everyone who speaks** in one video at once ([below](#voices-several-people-from-one-video)). Whisper listens to every spoken take and re-draws one that drops or adds words. Optional **Fish Audio Drama 3** engine for the most natural narration ([below](#fish-audio-drama-3-optional)). |
 | **Cast** | Put the person from up to 3 reference photos into the video (H3 reference-to-video, the official recipe). Consent checkbox required. |
 | **Recreate a Short** | Paste a YouTube Short and recast it. **Faithful** (default) follows the original frame by frame: the director picks out the performer and checks anchor frames about 1.2 s apart inside every shot; only where the performer's face is visible is your cast swapped in (from one clean portrait, never from an earlier swap), and H3 animates between the anchors, each clip retimed to the exact gap. **Re-imagine** has the director re-describe each shot and re-shoots it with your cast, optionally with your changes. The output keeps the Short's shape (vertical stays vertical) unless you pick landscape. **Soundtrack:** the original audio exactly (default), the original music under your cast's voices, or new sound made with the picture. With the original sound, every shot is cut to the original's length so the cuts land on the beat. |
 | **Editor** | Re-take any segment, re-score the film, and export with crossfaded seams. |
-| **Library / Queue** | Everything you make, filterable, with a download button on every video, song and image. Renders keep going if you close the page. |
+| **Library / Queue** | Everything you make, filterable, with a download button on every video, song and image. Renders keep going if you close the page. Deleting moves a render or voice to the **Trash** (Library → Trash), where you can restore it or delete it for good. |
 
 A **TensorFold** int8 engine for FastH3 is optional and makes Draft **1.7–1.9x** and Fast HD **1.4x** faster ([benchmarks](docs/BENCHMARKS.md)).
+
+**Checks and guards** (new 2026-10-16):
+- **Negation warning.** The video and image models have no negative prompt, so "no cars" tends to bring cars. The page flags such
+  phrases under the prompt as you type and suggests saying what *is* there; the studio's own prompts and the director are written that way.
+- **Shot check.** Every rendered clip is frame-checked: a hard cut inside a clip asked for as one shot, or a keyframe film clip that does
+  not open or close on its pictures, triggers the same single re-take as a weak director score.
+- **Edit noise seed.** An image edit draws its noise from the seed *and* the input pictures, so an edit with the seed its source was
+  made with no longer walks back to the source.
+- **Memory guard.** While a render runs, free memory is read 4 times a second; below 6 GiB the render is stopped with a clear message,
+  below 3 GiB ComfyUI is stopped too, so the Spark never freezes (`STUDIO_MEM_FLOOR_GIB`, `STUDIO_MEM_CRIT_GIB`).
+
+### Voices: several people from one video
+
+On the Voices tab, tick **Clone everyone who speaks** and paste a YouTube Short (or video). The studio transcribes it, fingerprints
+each phrase with Qwen3-TTS's own speaker encoder, groups the phrases by voice and makes one voice per person (up to 6). Each
+person's reference is their longest clean stretch on their own, or a few of their own turns joined when nobody talks long alone, and
+it is transcribed again from that clip alone so no one else's words leak into the clone. The director looks at frames taken while
+that person speaks and names the voice (a name only when the speaker names themselves). If the count comes out wrong, set **How many
+people?** (2–6) instead of Auto. Each person needs about 5 s of clean speech. Consent is required, as for every clone.
+
+### Fish Audio Drama 3 (optional)
+
+The narrator can speak with **Fish Audio Drama 3** instead of Qwen3-TTS: Video builder → voice-over → *Voice engine*. It is slower to
+start and needs the GPU free (about 42 GB at its peak), and it sounds the most natural; every take is word-checked by Whisper like
+Qwen3-TTS takes. It runs on TensorFold's native CUDA port, which you build once, and the weights (41.5 GB) are opt-in:
+`python3 scripts/download_models.py --group drama3`. Setup: [docs/DRAMA3.md](docs/DRAMA3.md). **Built with Fish Audio.** The weights
+are under the Fish Audio Community License: free for research and non-commercial use, commercial use only under US$500,000 annual
+revenue, never as a hosted voice service without Fish Audio's licence, and only with consent for real people's voices.
 
 ## Samples
 
@@ -212,7 +240,7 @@ Not to render. Without it the studio still makes video, images and music; *Write
 <summary><b>Can I use what I make commercially?</b></summary>
 
 The code here is MIT, but every model keeps its own licence, and several restrict commercial use (among them Qwen-Image 2.1,
-Juggernaut Z, Krea 2 and MiniMax H3). Check [docs/MODELS.md](docs/MODELS.md) before you sell or publish.
+Juggernaut Z, Krea 2 and MiniMax H3, and the optional Fish Audio Drama 3 voice engine). Check [docs/MODELS.md](docs/MODELS.md) before you sell or publish.
 </details>
 
 <details>
@@ -237,6 +265,7 @@ voice. Read [docs/RESPONSIBLE_USE.md](docs/RESPONSIBLE_USE.md).
 | [docs/DIRECTOR.md](docs/DIRECTOR.md) | setting up the director (TensorFold recipe or any OpenAI-compatible server) |
 | [docs/MING.md](docs/MING.md) | the optional Ming-Image 0.1 Design model: weights, code and venv |
 | [docs/FAST_IMAGES.md](docs/FAST_IMAGES.md) | the optional Fast image engine (LocalRouter) and the memory broker |
+| [docs/DRAMA3.md](docs/DRAMA3.md) | the optional Fish Audio Drama 3 voice engine: licence, weights, building the TensorFold engine on a Spark |
 | [tensorfold/README.md](tensorfold/README.md) | the optional TensorFold engine for FastH3 |
 | [docs/BENCHMARKS.md](docs/BENCHMARKS.md) | full benchmark tables, methods and limitations ([raw results](benchmarks/)) |
 | [docs/RESPONSIBLE_USE.md](docs/RESPONSIBLE_USE.md) | consent, copyright and labelling |

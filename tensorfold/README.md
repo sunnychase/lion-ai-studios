@@ -9,8 +9,8 @@ Both projects are third-party and permissively licensed; this repo only adds a 1
 
 | part | source | tested at |
 |---|---|---|
-| ComfyUI node `TensorFoldH3Blocks` | [drowzeys/keys-TensorFold-Studio-Mac-DGXSpark-64GB-VRam-Min](https://github.com/drowzeys/keys-TensorFold-Studio-Mac-DGXSpark-64GB-VRam-Min) (Apache-2.0) | `d99d0895` |
-| engine `libtf_h3.so` | [drowzeys/TensorFold](https://github.com/drowzeys/TensorFold) `h3-cuda` (MIT) | `16cecde2`, built with CUDA 13.0 + Zig 0.17.0 |
+| ComfyUI node `TensorFoldH3Blocks` | [drowzeys/keys-Wasserman-Slate-AI-Studio-powered-by-TensorFold-built-with-integrated-Fish-Audio-Drama3](https://github.com/drowzeys/keys-Wasserman-Slate-AI-Studio-powered-by-TensorFold-built-with-integrated-Fish-Audio-Drama3) (Apache-2.0; formerly keys-TensorFold-Studio-Mac-DGXSpark-64GB-VRam-Min) | `d99d0895` |
+| engine `libtf_h3.so` | [drowzeys/TensorFold](https://github.com/drowzeys/TensorFold) `h3-cuda` (Apache-2.0, from upstream [ashhart/TensorFold](https://github.com/ashhart/TensorFold)) | `16cecde2`, built with CUDA 13.0 + Zig 0.17.0 |
 
 1. Install the node into `ComfyUI/custom_nodes/tensorfold_h3/` and build `libtf_h3.so` as that repo's README describes,
    at the commits above.

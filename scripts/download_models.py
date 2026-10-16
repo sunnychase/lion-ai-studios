@@ -4,9 +4,10 @@
 
   python3 scripts/download_models.py --list                      # what exists, sizes, licences
   python3 scripts/download_models.py                             # the core set (~122 GB): video, images, fast music
-  python3 scripts/download_models.py --all                       # everything (~331 GB)
+  python3 scripts/download_models.py --all                       # everything except the opt-in extras (~373 GB)
   python3 scripts/download_models.py --group video --group music # whole groups (core + optional)
   python3 scripts/download_models.py --file Chroma1-HD.safetensors
+  python3 scripts/download_models.py --group drama3              # opt-in: Fish Audio Drama 3 (41.5 GB, its own licence; docs/DRAMA3.md)
 
 Destinations come from studio.env (COMFY_MODELS, STUDIO_HOME) or the environment. Files already present with the right size are skipped;
 an interrupted download resumes from its .part file. Gated repos need HF_TOKEN in the environment (read by curl, never printed).
@@ -46,17 +47,18 @@ def curl(url, out, size):
     return f"FAILED (curl {rc}, {got} of {size} bytes) — run again to resume"
 
 
-def repo_files(repo):
-    t = json.load(urllib.request.urlopen(f"https://huggingface.co/api/models/{repo}/tree/main?recursive=1", timeout=60))
+def repo_files(repo, rev="main"):
+    t = json.load(urllib.request.urlopen(f"https://huggingface.co/api/models/{repo}/tree/{rev}?recursive=1", timeout=60))
     return [(x["path"], x.get("size")) for x in t if x.get("type") == "file"]
 
 
 def fetch(e):
     d = dest_dir(e)
     if e.get("url"): return [(e["file"], curl(e["url"], os.path.join(d, e["file"]), e.get("bytes")))]
-    if e.get("path") == "*":                                   # a whole repo (the voice models)
-        return [(p, curl(f"https://huggingface.co/{e['repo']}/resolve/main/{p}", os.path.join(d, p), s)) for p, s in repo_files(e["repo"])]
-    return [(e["file"], curl(f"https://huggingface.co/{e['repo']}/resolve/main/{e['path']}", os.path.join(d, e["file"]), e.get("bytes")))]
+    rev = e.get("rev") or "main"                               # an entry may pin a commit
+    if e.get("path") == "*":                                   # a whole repo (the voice models, Drama 3)
+        return [(p, curl(f"https://huggingface.co/{e['repo']}/resolve/{rev}/{p}", os.path.join(d, p), s)) for p, s in repo_files(e["repo"], rev)]
+    return [(e["file"], curl(f"https://huggingface.co/{e['repo']}/resolve/{rev}/{e['path']}", os.path.join(d, e["file"]), e.get("bytes")))]
 
 
 def main():
@@ -67,8 +69,9 @@ def main():
     if a.list:
         for e in MANIFEST:
             print(f"{e['group']:6} {e['tier']:8} {e['bytes'] / 1e9:6.1f} GB  {e.get('file') or e['repo']:58} {e.get('license') or '?':30} {e['what']}")
-        print(f"core {sum(e['bytes'] for e in MANIFEST if e['tier'] == 'core') / 1e9:.0f} GB · all {sum(e['bytes'] for e in MANIFEST) / 1e9:.0f} GB"); return
-    pick = [e for e in MANIFEST if a.all or (a.group and e["group"] in a.group) or (a.file and e.get("file") in a.file)
+        print(f"core {sum(e['bytes'] for e in MANIFEST if e['tier'] == 'core') / 1e9:.0f} GB · all {sum(e['bytes'] for e in MANIFEST if not e.get('explicit')) / 1e9:.0f} GB"
+              f" · opt-in extras (only by --group) {sum(e['bytes'] for e in MANIFEST if e.get('explicit')) / 1e9:.0f} GB"); return
+    pick = [e for e in MANIFEST if (a.all and not e.get("explicit")) or (a.group and e["group"] in a.group) or (a.file and e.get("file") in a.file)
             or (not (a.all or a.group or a.file) and e["tier"] == "core")]
     if not pick: sys.exit("nothing matched")
     print(f"{len(pick)} item(s), {sum(e['bytes'] for e in pick) / 1e9:.0f} GB"); bad = 0

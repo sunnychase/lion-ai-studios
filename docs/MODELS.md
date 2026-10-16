@@ -4,9 +4,10 @@ Everything the studio can use, where it goes, and where it comes from. `scripts/
 (`scripts/models.json`) and downloads with resume and size checks. Run `--list` to see it in your terminal.
 
 - **core** (~122 GB): enough for video with sound (all four presets), the two default image models and fast music.
-- **all** (~343 GB): adds the TensorFold checkpoint, the 8-bit decoder, Cast/Recreate, nine more image models, MiniMax Music 3, MIDI and voices.
+- **all** (~373 GB): adds the TensorFold checkpoint, the 8-bit decoder, Cast/Recreate, nine more image models, MiniMax Music 3, MIDI and voices.
 - The director is a separate download (see [DIRECTOR.md](DIRECTOR.md)). Demucs fetches its own small model on first use.
 - Ming-Image 0.1 Design is a separate download too, with its own code and venv (see [MING.md](MING.md)).
+- Fish Audio Drama 3 (optional voice engine, 41.5 GB) is opt-in: `--all` leaves it out; fetch it with `--group drama3` (see [DRAMA3.md](DRAMA3.md)).
 
 `comfy:<folder>` means `$COMFY_MODELS/<folder>/` and `studio:<folder>` means `$STUDIO_HOME/models/<folder>/`. The studio only offers
 what is installed: an image model missing a file is left out of the list.
@@ -81,6 +82,16 @@ FLUX 3 Image Klein also needs ComfyUI's FLUX 3 support: `scripts/install_comfyui
 |---|---|---:|---|---|---|---|
 | optional | `whole repo` | 4.6 GB | `studio:Qwen3-TTS-12Hz-1.7B-Base` | [Qwen/Qwen3-TTS-12Hz-1.7B-Base](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base) | apache-2.0 | Qwen3-TTS voice cloning (whole repo) |
 | optional | `whole repo` | 1.7 GB | `studio:whisper-large-v3-turbo` | [openai/whisper-large-v3-turbo](https://huggingface.co/openai/whisper-large-v3-turbo) | mit | Whisper transcription (whole repo) |
+
+## Fish Audio Drama 3 (optional voice engine, outside ComfyUI) — Built with Fish Audio
+
+| tier | file | size | goes to | source | licence | used for |
+|---|---|---:|---|---|---|---|
+| optional, opt-in | `whole repo` @ `e0a9218a` | 41.5 GB | `DRAMA3_MODEL` (default `studio:drama-3`) | [fishaudio/drama-3](https://huggingface.co/fishaudio/drama-3) | Fish Audio Community License v1.0 | the narrator's most natural voice engine |
+
+Research and non-commercial use is free; commercial use only under US$500,000 annual revenue; a hosted voice service always needs a
+licence from Fish Audio; consent is required for real people's voices. It also needs the TensorFold engine and a one-time codec
+conversion: [DRAMA3.md](DRAMA3.md).
 
 ## Ming-Image (optional, outside ComfyUI)
 

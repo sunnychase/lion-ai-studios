@@ -160,13 +160,22 @@ All of these were made with this repo on one DGX Spark. Prompts and settings are
 
 | | |
 |---|---|
+| [<img src="samples/video/showcase-reel-59s.jpg" width="100%">](samples/video/showcase-reel-59s.mp4)<br>**Showcase reel** (59 s): stills, video with sound, a three-person scene, an edit and an explainer, on a studio-made score | [<img src="samples/video/matrix-math-explainer-62s.jpg" width="100%">](samples/video/matrix-math-explainer-62s.mp4)<br>**Matrix math explainer** (62 s): ten AI shots cut to a 128 BPM score, narrated by a synthetic voice; every number on screen is computed |
+| [<img src="samples/video/cafe-conversation-cast-3-voices-24s.jpg" width="100%">](samples/video/cafe-conversation-cast-3-voices-24s.mp4)<br>**Three people, one café** (24 s): Cast mode from three portraits, each speaking in their own synthetic voice; every line checked word for word | [<img src="samples/video/ink-fluid-flow-fasthd-8s.jpg" width="100%">](samples/video/ink-fluid-flow-fasthd-8s.mp4)<br>**Fluid flow**: 8 s Fast HD, ink vortices with sound (review 8/10) |
+| <img src="samples/images/f1-car-flux3-klein.jpg" width="100%"><br>FLUX 3 Image Klein: motorsport | <img src="samples/images/t-rex-flux3-klein.jpg" width="100%"><br>FLUX 3 Image Klein: dinosaurs |
+| <img src="samples/images/spiral-galaxy-flux3-klein.jpg" width="100%"><br>FLUX 3 Image Klein: a spiral galaxy | <img src="samples/images/milky-way-krea2-realism.jpg" width="100%"><br>Krea 2 Turbo + realism LoRA: night sky |
+| <img src="samples/images/snow-leopard-krea2-realism.jpg" width="100%"><br>Krea 2 Turbo + realism LoRA: wildlife | <img src="samples/images/elephants-flux3-klein.jpg" width="100%"><br>FLUX 3 Image Klein: wildlife |
+| <img src="samples/images/ink-fluid-flux3-klein.jpg" width="100%"><br>FLUX 3 Image Klein: fluid dynamics | <img src="samples/images/wind-tunnel-krea2-realism.jpg" width="100%"><br>Krea 2 Turbo + realism LoRA: wind-tunnel smoke |
+| <img src="samples/images/brachiosaurus-krea2-realism.jpg" width="100%"><br>Krea 2 Turbo + realism LoRA | <img src="samples/images/watch-edit-flux3-klein.jpg" width="100%"><br>Edit with FLUX 3 Image Klein: "a clean dial and a small gold lion emblem" (left: the original) |
+| <img src="samples/images/cast-portraits-z-image-turbo.jpg" width="100%"><br>Z-Image-Turbo: the three portraits behind the café scene | <img src="samples/images/lion-poster-qwen-image-2.1.jpg" width="60%"><br>Qwen-Image 2.1: lettering |
 | [<img src="samples/video/lion-roar-fasthd-10s.jpg" width="100%">](samples/video/lion-roar-fasthd-10s.mp4)<br>**Lion roar**: 10 s Fast HD with sound, written by the director from one sentence (review 8/10) | [<img src="samples/video/paper-boat-film-fasthd-33s.jpg" width="100%">](samples/video/paper-boat-film-fasthd-33s.mp4)<br>**Paper boat**: a 33 s film of 3 segments joined seamlessly, picture and sound continuous across the joins |
 | <img src="samples/images/marquee-qwen-image-2.1-turbo.jpg" width="100%"><br>Qwen-Image 2.1 Turbo: text in the picture | <img src="samples/images/lighthouse-z-image-turbo.jpg" width="100%"><br>Z-Image-Turbo |
 | <img src="samples/images/fisherman-krea2-realism.jpg" width="100%"><br>Krea 2 Turbo + realism LoRA | <img src="samples/images/reading-nook-flux2-klein.jpg" width="100%"><br>FLUX.2 klein 4B |
 | <img src="samples/images/serengeti-lion-flux3-klein.jpg" width="100%"><br>FLUX 3 Image Klein, from a one-line prompt | <img src="samples/images/deco-poster-flux3-klein.jpg" width="100%"><br>FLUX 3 Image Klein: lettering |
 | <img src="samples/images/mug-edit-flux3-klein.jpg" width="100%"><br>Edit with FLUX 3 Image Klein: "Make the mug glossy red ceramic with steam rising from it" | |
 
-**Music:** [Run with the Lions](samples/music/run-with-the-lions-ace-step.mp3) (ACE-Step, a song with original lyrics) ·
+**Music:** [Trailer, 128 BPM](samples/music/trailer-128bpm-ace-step.mp3) and [café jazz](samples/music/cafe-jazz-ace-step-40s.mp3) (ACE-Step, used in the videos above) ·
+[Run with the Lions](samples/music/run-with-the-lions-ace-step.mp3) (ACE-Step, a song with original lyrics) ·
 [Trailer score](samples/music/trailer-score-minimax-music3.mp3) (MiniMax Music 3) ·
 [Lion's Dawn, MIDI with chosen instruments](samples/music/lions-dawn-midi-instruments.mp3) and
 [the same piece restyled by AI](samples/music/lions-dawn-midi-ai-restyle.mp3) ([the .mid](samples/music/lions-dawn.mid))

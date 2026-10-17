@@ -2,6 +2,16 @@
 
 Updates to Lion AI Studios, newest first. The project has no version numbers; each entry is dated.
 
+## 2026-10-16 (third update) — Showcase samples, memory guard
+
+- **New samples** (`samples/`, details in [samples/README.md](samples/README.md)): a one-minute showcase reel; a 62 s matrix-math
+  explainer cut from ten Fast HD shots to a 128 BPM score with a synthetic narrator; a three-person café scene in Cast mode, each
+  person speaking in their own synthetic voice; an ink fluid-flow clip; eleven new stills (motorsport, dinosaurs, galaxies,
+  wildlife, fluid dynamics, wind-tunnel smoke, lettering, the Cast portraits); a before/after edit; two new ACE-Step tracks.
+- **Memory guard:** a fast fall in free memory now stops a render only when free memory is also under twice the floor
+  (`2 × MEM_FLOOR_GIB`). Before, a large but harmless load (for example the director model, ~18 GiB, loading mid-render with
+  plenty of memory left) could stop a render.
+
 ## 2026-10-16 (second update) — Fish Audio Drama 3 fast server (drama-tensorfold)
 
 - **Drama 3 through a speech server.** With [plotarmordev/drama-tensorfold](https://github.com/plotarmordev/drama-tensorfold)

@@ -1,7 +1,62 @@
 # Samples
 
-Everything here was made with this repository on one NVIDIA DGX Spark on 2026-10-10. Nothing was retouched. Video and audio were
-re-encoded once to keep the repo small (H.264 CRF 22–24, AAC 160k; MP3 192k), and all file metadata was stripped.
+Everything here was made with this repository on one NVIDIA DGX Spark (2026-10-10 and 2026-10-16). No image was retouched. Video and audio were
+re-encoded once to keep the repo small (H.264 CRF 22–24, or 1280x720 at 1.5–1.8 Mbit/s for the 10-16 videos; AAC 160k; MP3 192k), and all
+file metadata was stripped. The 10-16 reel, explainer and café scene were assembled from studio output as described below.
+
+## Showcase, 2026-10-16
+
+### `video/showcase-reel-59s.mp4`
+A one-minute tour of what the studio makes: ten stills, three Fast HD clips with their own sound, two shots of the café scene
+below (with their voices), the watch edit as a before/after wipe, an excerpt of the matrix explainer, and an end card. The
+footage, stills, voices and score all came out of the studio; the cuts, slow camera moves, captions and the mix were put
+together afterwards with a short Python + ffmpeg script. Score: ACE-Step (Fast), 75 s asked, 110 BPM, C major, "cinematic
+uplifting trailer score, orchestral strings and modern electronic percussion, rising tension into a soaring finale, instrumental".
+
+### `video/matrix-math-explainer-62s.mp4`: "Matrix math, at the speed of light"
+- **Footage:** ten Fast HD shots (8 s each), written as picture / action / sound: a person at a laptop at night, a point of light
+  exploding into a lattice, a bending grid, crossing walls of light, a GPU die, a liquid-cooled server board, a data-centre aisle,
+  a neural network, three orbs trading arcs of light, and a pull-back to a galaxy-sized web. Director reviews: 6–8/10.
+- **Math:** the matrices, products, the neural-layer example and the attention weights are computed with numpy and drawn over the
+  footage by a script; the video model never draws a number. The counters are stated as approximations on screen
+  (a 70-billion-parameter model does about one multiply-add per parameter per word).
+- **Voice:** a synthetic voice made with Fish Audio Drama 3 (no real person's voice); ten lines, each checked with Whisper and
+  word-perfect on the first take.
+- **Score:** ACE-Step (Fast), 80 s, 128 BPM, D minor: "epic cinematic electronic trailer score, driving 128 bpm pulse, punchy kick drum, deep sub bass, fast arpeggiated synths, rising risers and big impacts, hybrid orchestral hits, futuristic and exciting, instrumental, builds to a huge climax". The cuts sit on its beat grid.
+
+### `video/cafe-conversation-cast-3-voices-24s.mp4`: three people, one café
+- **Cast mode** (MiniMax H3 reference-to-video): one shot per speaker from a Z-Image-Turbo portrait
+  (`images/cast-portraits-z-image-turbo.jpg`) and that character's synthetic voice (Fish Audio Drama 3, made from text alone).
+  Same scene in all three shots: *A medium close-up in a sunlit seaside cafe: the person sits at a wooden table by a large window with the sea and a distant lighthouse behind, a cup of coffee in front of them, talking warmly to two friends just off camera, natural expressions and small hand gestures, soft golden afternoon light, shallow depth of field, 50mm lens, photorealistic.*
+- **Lines** (Whisper hears each one word for word):
+  - Maya: "Okay, I found it. A lighthouse on the cliffs, and you can actually stay the night in the keeper's cottage."
+  - Daniel: "A lighthouse? Maya, the last time you booked something romantic, we ended up in a barn."
+  - Lena: "Oh, come on, Daniel. Sunrise over the sea, no phones, just us. I'm already packing."
+- **Review:** 9, 8 and 9/10; 25–31 min per shot. The three shots were joined and the café score
+  (`music/cafe-jazz-ace-step-40s.mp3`, ACE-Step, 92 BPM, D major) mixed under the dialogue with ffmpeg.
+- Maya, Daniel and Lena are fictional; no real person's face or voice is used.
+
+### `video/ink-fluid-flow-fasthd-8s.mp4`
+Fast HD, 8 s, seed 5141983, picture and sound in one pass, review 8/10, 7 min. Prompt: *Macro view of clear water against a pure black background, lit by bright studio light. A plume of deep blue ink and a plume of molten-gold ink enter from opposite sides. The two inks meet in the centre and roll up into curling vortices and Kelvin-Helmholtz waves, fine filaments stretching and folding into swirling eddies; slow, graceful motion; the camera holds still, very slowly pushing in. Sound: A soft deep underwater hum with gentle bubbling and a calm ambient synth pad.*
+
+### Images (1344x768 unless noted)
+
+| file | model | prompt |
+|---|---|---|
+| `images/f1-car-flux3-klein.jpg` | FLUX 3 Image Klein | Hyperrealistic motorsport photograph of a modern Formula One race car at full speed through a fast corner at dusk, low panning shot with the background streaked by motion blur while the car stays tack-sharp, sparks flying from the floor, glowing brake discs, a deep blue and gold livery with a stylised golden lion emblem, generic plain sponsor panels, heat haze over the tarmac, floodlights and grandstands blurred behind, telephoto lens, professional sports photography. |
+| `images/t-rex-flux3-klein.jpg` | FLUX 3 Image Klein | Hyperrealistic wildlife photograph of a Tyrannosaurus rex striding through a misty prehistoric fern forest at dawn, shafts of golden light through towering conifers, scaly textured skin with scars and mud, breath steaming in the cool air, a flock of small pterosaurs lifting off behind it, shot like a BBC nature documentary, telephoto lens, shallow depth of field, photorealistic. |
+| `images/brachiosaurus-krea2-realism.jpg` | Krea 2 Turbo + realism LoRA | Hyperrealistic photograph of a herd of long-necked Brachiosaurus wading across a wide shallow river at sunset, water splashing around their legs, reflections on the surface, volcanic mountains on the horizon with a thin plume of smoke, warm orange light, wildlife documentary style, photorealistic detail on the wrinkled skin. |
+| `images/spiral-galaxy-flux3-klein.jpg` | FLUX 3 Image Klein | Breathtaking deep-space astrophotograph of a grand-design spiral galaxy seen at an angle, glowing golden core, sweeping blue spiral arms dotted with pink star-forming nebulae and dark dust lanes, a smaller companion galaxy nearby, thousands of background galaxies and sharp foreground stars with diffraction spikes, space telescope image quality, rich true colour, photorealistic. |
+| `images/milky-way-krea2-realism.jpg` | Krea 2 Turbo + realism LoRA | Hyperrealistic night-sky photograph from a mountain lake: the Milky Way galactic core arching over snow-capped peaks, perfectly mirrored in the still water, the Andromeda galaxy visible as a soft smudge, faint green airglow on the horizon, a single tent glowing warm orange on the shore, long-exposure astrophotography, pin-sharp stars, photorealistic. |
+| `images/snow-leopard-krea2-realism.jpg` | Krea 2 Turbo + realism LoRA | Hyperrealistic wildlife photograph of a snow leopard crouched on a snowy Himalayan ridge, thick spotted coat dusted with snowflakes, pale green eyes staring into the lens, falling snow, blue-grey mountains in the haze behind, 500mm lens, shallow depth of field, photorealistic. |
+| `images/elephants-flux3-klein.jpg` | FLUX 3 Image Klein | Hyperrealistic wildlife photograph of an elephant herd with a calf crossing a dusty plain at sunset, red dust lit by low sun, silhouettes of more elephants in the haze, Mount Kilimanjaro faint on the horizon, telephoto compression, nature documentary style, photorealistic. |
+| `images/ink-fluid-flux3-klein.jpg` | FLUX 3 Image Klein | High-speed macro photograph of fluid dynamics: two streams of ink, deep blue and molten gold, colliding in clear water and curling into turbulent vortices and Kelvin-Helmholtz waves, fine filaments and swirling eddies frozen in time, black background, studio strobe lighting, ultra-sharp detail, photorealistic scientific art photography. |
+| `images/wind-tunnel-krea2-realism.jpg` | Krea 2 Turbo + realism LoRA | Hyperrealistic photograph of a wind-tunnel smoke visualisation over a sleek aerofoil: smooth laminar smoke streamlines flowing over the top surface, separating into a turbulent wake with a clear von Karman vortex street behind the trailing edge, dark lab background, laser-sheet lighting, scientific photography, photorealistic. |
+| `images/lion-poster-qwen-image-2.1.jpg` | Qwen-Image 2.1 (1024x1344) | Elegant minimalist poster: a golden lion head in profile on a deep charcoal background, fine engraved line-art style. At the top in bold modern serif lettering the words LION AI STUDIOS, and below in small spaced capitals PROFESSIONAL MEDIA SUITE. Clean layout, high contrast, print quality. |
+| `images/watch-edit-flux3-klein.jpg` | Juggernaut Z (left), then edited with FLUX 3 Image Klein (right) | Original: *Product photograph of a luxury automatic wristwatch with a deep green dial and a brushed steel case resting on a dark slate stone, a few drops of water beading on the crystal, dramatic side light, shallow depth of field, studio quality, photorealistic.* Edit: *Give the watch a clean, plain deep-green sunburst dial with only the steel hour markers, the hands and the date window, and add a small engraved golden lion emblem at the twelve o clock position. Keep everything else exactly the same: the steel case, the slate stone, the water drops, the lighting and the framing.* |
+| `images/cast-portraits-z-image-turbo.jpg` | Z-Image-Turbo (1024x1280 each) | Three head-and-shoulders studio portraits of fictional people, used as the Cast references for the café scene. |
+
+## 2026-10-10
 
 ## Video (MiniMax H3 · Fast HD 1344x768 · TensorFold engine · picture and sound in one pass)
 

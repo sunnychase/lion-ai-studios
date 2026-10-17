@@ -96,7 +96,7 @@ def mem_guard():
         if not RUNNING["pid"]: prev = None; continue
         m = meminfo_gib(); fall = (prev - m) * 4 if prev is not None else 0.0; prev = m
         if m <= 0: continue
-        if m < MEM_FLOOR_GIB or (fall > 0 and m - fall < MEM_CRIT_GIB):
+        if m < MEM_FLOOR_GIB or (fall > 0 and m < 2 * MEM_FLOOR_GIB and m - fall < MEM_CRIT_GIB):   # a fast fall only counts under twice the floor (a model loading mid-render is a step, not a runaway)
             RUNNING["stop"] = (f"stopped to protect the Spark: free memory fell to {m:.1f} GiB (floor {MEM_FLOOR_GIB:g} GiB) — try a shorter clip, "
                                "a smaller size, or stop other GPU services first")
             try: urllib.request.urlopen(urllib.request.Request(f"{COMFY}/interrupt", data=b"{}", headers={"Content-Type": "application/json"}), timeout=5)

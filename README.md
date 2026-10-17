@@ -2,7 +2,7 @@
 
 <h1 align="center">Lion AI Studios</h1>
 <p align="center"><b>Professional Media Suite for the NVIDIA DGX Spark</b><br>
-Video with sound · images · music · voices · a director that writes and reviews every shot. Everything runs locally on one Spark.</p>
+Video with matching sound (MiniMax H3) · multi-shot films · cast scenes where several people talk in cloned voices (Fish Audio Drama 3, Qwen3-TTS) · images and edits (FLUX 3, Qwen-Image, Z-Image, Krea) · music (ACE-Step, MiniMax Music 3, MIDI) · an AI director that reviews every shot. Everything runs locally on one Spark; no cloud APIs.</p>
 <p align="center"><em>Created by <a href="https://github.com/sunnychase">Sunny Chase</a> in collaboration with Claude (Anthropic).</em></p>
 
 <p align="center">

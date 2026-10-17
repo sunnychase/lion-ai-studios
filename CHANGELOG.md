@@ -2,7 +2,13 @@
 
 Updates to Lion AI Studios, newest first. The project has no version numbers; each entry is dated.
 
-## 2026-10-17 — Showcase reel back in sync
+## 2026-10-17 — Café scene re-shot; showcase reel back in sync
+
+- **Café scene re-shot** (`samples/video/cafe-conversation-cast-3-voices-24s.mp4`): the first version invented different friends at the
+  table edges in each shot, so the 24 s scene showed more than three people. All three shots are new: each shows only its speaker,
+  in a documentary look (overcast window light, real skin texture, hand-held sway, fine grain). Checked per shot with SyncNet
+  (lip sync), Whisper (every word) and by eye (no extra people, no made-up lettering); the finished cut measures 0, -1 and -1
+  frames. Prompt and checks in `samples/README.md`. The showcase reel uses the new Maya and Daniel shots.
 
 - **Showcase reel** (`samples/video/showcase-reel-57s.mp4`, was `showcase-reel-59s.mp4`): the café voices were 2 s ahead of the
   picture. The assembly script's title card ran 4.5 s instead of 2.5 s (a frame count picked up late from the end card), while the

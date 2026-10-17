@@ -27,13 +27,17 @@ uplifting trailer score, orchestral strings and modern electronic percussion, ri
 ### `video/cafe-conversation-cast-3-voices-24s.mp4`: three people, one café
 - **Cast mode** (MiniMax H3 reference-to-video): one shot per speaker from a Z-Image-Turbo portrait
   (`images/cast-portraits-z-image-turbo.jpg`) and that character's synthetic voice (Fish Audio Drama 3, made from text alone).
-  Same scene in all three shots: *A medium close-up in a sunlit seaside cafe: the person sits at a wooden table by a large window with the sea and a distant lighthouse behind, a cup of coffee in front of them, talking warmly to two friends just off camera, natural expressions and small hand gestures, soft golden afternoon light, shallow depth of field, 50mm lens, photorealistic.*
+  Same scene in all three shots, written so each shot shows only its speaker (the friends stay behind the camera) and looks
+  filmed rather than generated: *Documentary-style handheld medium close-up, shot on a 35mm cinema camera: the person sits alone in the frame at a small worn wooden table in a busy seaside cafe, a large window of plain clear glass behind them (no writing, signs or lettering anywhere) with a grey-blue sea and a distant white lighthouse. Their two friends sit across the table behind the camera and are never seen: nobody else in the foreground, no shoulders, heads or hands at the edges of the frame; only a few soft, out-of-focus strangers far in the background. Soft overcast daylight from the window, real skin texture with pores and fine lines, natural unretouched look, a slight natural sway of a hand-held camera, fine film grain, muted true-to-life colours, like a frame from an independent film.*
 - **Lines** (Whisper hears each one word for word):
   - Maya: "Okay, I found it. A lighthouse on the cliffs, and you can actually stay the night in the keeper's cottage."
   - Daniel: "A lighthouse? Maya, the last time you booked something romantic, we ended up in a barn."
   - Lena: "Oh, come on, Daniel. Sunrise over the sea, no phones, just us. I'm already packing."
-- **Review:** 9, 8 and 9/10; 25–31 min per shot. The three shots were joined and the café score
-  (`music/cafe-jazz-ace-step-40s.mp3`, ACE-Step, 92 BPM, D major) mixed under the dialogue with ffmpeg.
+- **Review:** director 8, 8 (second take) and 7/10, about 25 min per shot. Every shot was also checked for lip sync with SyncNet
+  (offset 0 or -1 frame, confidence 7.9-9.1), word for word with Whisper, and by eye for extra people and garbled text (one take of
+  Lena was redone because the window behind her carried made-up lettering). A light grade (fine grain, gentle contrast curve) was
+  added afterwards with the audio copied untouched; the three shots were joined and the café score (`music/cafe-jazz-ace-step-40s.mp3`,
+  ACE-Step, 92 BPM, D major) mixed under the dialogue with ffmpeg. The finished cut measures 0, -1 and -1 frames with SyncNet.
 - Maya, Daniel and Lena are fictional; no real person's face or voice is used.
 
 ### `video/ink-fluid-flow-fasthd-8s.mp4`

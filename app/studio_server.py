@@ -6,7 +6,7 @@ chained from 15 s segments whose seams carry the previous segment's frames AND s
 Listens on config.HOST:PORT (127.0.0.1 by default) — put an authenticating reverse proxy in front before exposing it anywhere.
 GPU rule: if another GPU service is configured (GPU_TENANT_*), a render that needs the GPU names it, waits for the click, stops it,
 and offers to start it again afterwards. Thermal guard: before every segment, waits while the hottest board zone is >= HOT_C."""
-import json, math, os, re, shutil, socket, base64, struct, subprocess, sys, threading, time, urllib.request, uuid
+import json, math, os, re, shutil, socket, base64, struct, subprocess, sys, threading, time, urllib.request, urllib.error, uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, unquote
 
@@ -18,6 +18,7 @@ import studio_broker as SB                                      # noqa: E402  (t
 import midi_tool as MT                                          # noqa: E402  (GM names only; mido/tinysoundfont run in midi-venv)
 import negation as NG                                           # noqa: E402  (prompt words the models would show)
 import shot as SHOT                                             # noqa: E402  (cuts / keyframes held)
+import drama3 as DR3                                            # noqa: E402  (optional Fish Audio Drama 3: paths, server unit, fetch hook)
 
 ROOT = C.STUDIO_HOME; LIB = f"{ROOT}/library"; STATE = f"{ROOT}/state"; UP = f"{ROOT}/uploads"
 VOICES = f"{ROOT}/voices"; TTS_PY = C.TTS_PY; VOICE_PY = f"{HERE}/voice.py"
@@ -848,15 +849,11 @@ def add_voiceover(job, main):
     vd = f"{VOICES}/{vid}"
     if not os.path.exists(f"{vd}/ref.json"): raise RuntimeError("that voice is gone from the Voices tab")
     d = os.path.dirname(main); vo = f"{d}/voiceover.wav"
-    if p.get("vo_engine") == "drama3":                                        # optional Fish Audio Drama 3: ~42 GB — ComfyUI's models out first
-        job["progress"].update(phase="speaking the voice-over with Fish Audio Drama 3 (loads ~18 s)"); save()
-        try: urllib.request.urlopen(urllib.request.Request(f"{COMFY}/free", data=json.dumps({"unload_models": True, "free_memory": True}).encode(),
-                                                           headers={"Content-Type": "application/json"}), timeout=30)
-        except Exception: pass
-        r = vworker("say3", vd, text, vo, t=1800); job["vo_check"] = r.get("wordcheck"); job["vo_engine"] = "Fish Audio Drama 3 — Built with Fish Audio"
+    if p.get("vo_engine") == "drama3" and drama3_voiceover(job, vd, vid, text, vo): pass   # optional Drama 3: server → per-take → Qwen3-TTS
     else:
         job["progress"].update(phase="speaking the voice-over in the cloned voice (Qwen3-TTS)"); save()
         r = vworker("say", vd, text, vo, t=900); job["vo_check"] = r.get("wordcheck")
+        if p.get("vo_engine") == "drama3": job["vo_engine"] = "Qwen3-TTS (Drama 3 fallback — reason in the notes)"
     vdur, fdur = stitch.probe(vo)["dur"] or 0, stitch.probe(main)["dur"]; lead = 0.4; extra = max(0.0, lead + vdur + 0.3 - fdur)
     out = f"{d}/film_vo.mp4"
     graph = (f"[0:v]tpad=stop_mode=clone:stop_duration={extra:.2f}[v];[1:a]adelay={int(lead * 1000)}|{int(lead * 1000)},apad[vo];"
@@ -866,6 +863,136 @@ def add_voiceover(job, main):
                         "-preset", "slow", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "256k", "-movflags", "+faststart", out], capture_output=True, text=True)
     if r.returncode: raise RuntimeError("voice-over mix failed: " + (r.stderr or "")[-300:])
     return out
+
+
+# ── optional: Fish Audio Drama 3 — the fast speech server, then the per-take build ───────────────────────────────────────────────────
+# Order for a Drama 3 voice-over: weights (the optional fetch hook DRAMA3_FETCH_CMD, if they are missing) → ComfyUI /free → voice file
+# (voice3, ~2.6 GB, before the server loads) → the speech server (DRAMA3_SERVICE: drama-tensorfold's guarded pilot.py, needs ~88 GiB free
+# to load, capped at 54 GiB) → say3s. Fallbacks never fail the film: server path fails → the per-take say3 build; that fails too (or no
+# weights) → Qwen3-TTS, with the reason in the job notes. The unit is stopped DRAMA3_IDLE_S after the last voice-over.
+# Built with Fish Audio (Fish Audio Community License v1.0: loopback only; clone only voices with consent).
+D3S = {"last": 0.0, "busy": False}
+
+
+def _d3_note(job, msg):
+    job["vo_note"] = (job.get("vo_note", "") + " · " if job.get("vo_note") else "") + msg
+    job["notes"] = ((job.get("notes") or "") + " · " if job.get("notes") else "") + msg
+
+
+def d3_fetch(job):
+    """the checkpoint, fetched by the optional fetch hook (DRAMA3_FETCH_CMD) when it is missing -> (ok, note). Never raises except on cancel."""
+    if DR3.local(): return True, ""
+    if not DR3.FETCH_CMD: return False, "not installed (no weights in DRAMA3_MODEL; see docs/DRAMA3.md)"
+    ph = f"fetching Fish Audio Drama 3 ({DR3.GIB_ON_DISK} GB, the optional fetch hook)"; job["progress"].update(phase=ph); save(); t0 = time.time()
+    os.makedirs(DR3.WORK, exist_ok=True); log = f"{DR3.WORK}/fetch.log"
+    try:
+        with open(log, "a") as lf:
+            lf.write(f"\n== {now()} DRAMA3_FETCH_CMD\n"); lf.flush()
+            pr = subprocess.Popen(["/bin/bash", "-c", DR3.FETCH_CMD], stdout=lf, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                                  env={**os.environ, "DRAMA3_MODEL": DR3.CKPT})
+            while pr.poll() is None:
+                if job.get("cancel"): pr.terminate(); raise RuntimeError("cancelled")
+                if time.time() - t0 > 3 * 3600: pr.terminate(); return False, "the fetch hook did not finish in 3 hours"
+                time.sleep(5)
+    except RuntimeError: raise
+    except Exception as e: return False, f"the fetch hook could not run ({type(e).__name__}: {str(e)[:120]})"
+    if DR3.local(): return True, "fetched by the optional fetch hook"
+    return False, f"the fetch hook exited {pr.returncode} without a complete checkpoint (see {log})"
+
+
+def d3_health():
+    try:
+        with urllib.request.urlopen(f"{DR3.URL}/health", timeout=3) as r: return r.status == 200
+    except Exception: return False
+def d3_active():
+    if not DR3.UNIT: return d3_health()
+    return sh(["systemctl", "--user", "is-active", DR3.UNIT], 8) in ("active", "activating", "reloading")
+
+
+def d3_server_up(job):
+    """start the speech server unit if needed and wait until /health answers -> (ok, note). It needs ~88 GiB free; the broker frees
+    the studio's own holders only (ComfyUI, LocalRouter, the director) — never other services."""
+    if d3_health(): D3S["last"] = time.time(); return True, ""
+    if not DR3.UNIT: return False, f"no speech server answers on port {DR3.PORT} and DRAMA3_SERVICE is not set"
+    if not d3_active():
+        rm = BR.make_room(DR3.NEED_GIB + 1, "Fish Audio Drama 3 speech server", may_release=("comfyui", "localrouter", "director"))
+        if not rm["ok"]: return False, f"only {rm['have_gib']:.0f} GiB free — the Drama 3 server needs {DR3.NEED_GIB} GiB"
+        try:
+            os.makedirs(os.path.dirname(DR3.GPU_LOCK), exist_ok=True); os.close(os.open(DR3.GPU_LOCK, os.O_CREAT | os.O_RDWR, 0o644))   # pilot.py refuses a missing lock file
+        except OSError: pass
+        sh(["systemctl", "--user", "reset-failed", DR3.UNIT], 10); sh(["systemctl", "--user", "start", "--no-block", DR3.UNIT], 30)
+    job["progress"].update(phase="loading Fish Audio Drama 3 (speech server, ~10 s to a minute)"); save(); t0 = time.time()
+    while time.time() - t0 < 900:
+        if job.get("cancel"): raise RuntimeError("cancelled")
+        if d3_health(): D3S["last"] = time.time(); return True, ""
+        if time.time() - t0 > 10 and not d3_active():
+            why = sh(["journalctl", "--user", "-u", DR3.UNIT, "-n", "4", "--no-pager", "-o", "cat"], 10).replace("\n", " ")[-240:]
+            return False, f"the Drama 3 server stopped while loading ({why or 'see journalctl --user -u ' + DR3.UNIT})"
+        time.sleep(2)
+    return False, "the Drama 3 server did not become ready in 15 minutes"
+
+
+def d3_stop():
+    if DR3.UNIT: sh(["systemctl", "--user", "stop", DR3.UNIT], 120)
+
+
+def d3_idle():
+    """stop the speech server unit DRAMA3_IDLE_S after its last voice-over so its ~54 GiB comes back — never while a voice-over is
+    speaking; at once when another job is running (a render). A unit found running (studio restart, started by hand) gets the window
+    from when it was first seen."""
+    while True:
+        time.sleep(15)
+        try:
+            if D3S["busy"] or not d3_active(): continue
+            if not D3S["last"]: D3S["last"] = time.time(); continue
+            other = any(j["status"] == "running" for j in list(JOBS.values()))   # a render now: the server's ~54 GiB would only starve it
+            if not other and time.time() - D3S["last"] < DR3.IDLE_STOP_S: continue
+            d3_stop(); D3S["last"] = 0.0
+            BR._remember({"ok": True, "log": [f"Drama 3 speech server stopped after {DR3.IDLE_STOP_S} s idle"]}, "idle stop")
+        except Exception: pass
+
+
+def drama3_voiceover(job, vd, vid, text, vo):
+    """-> True when Drama 3 (server or per-take) spoke the voice-over; False = the caller speaks it with Qwen3-TTS (reason in job notes).
+    job["vo_engine"] / job["vo_path"] record which path was used."""
+    D3S["busy"] = True
+    try:
+        ok, note = d3_fetch(job)
+        if note and ok: _d3_note(job, f"Drama 3 {note}")
+        if not ok:
+            _d3_note(job, f"Drama 3 unavailable — {note}; spoken with Qwen3-TTS instead"); job["vo_path"] = "say (fallback: no weights)"; return False
+        try: urllib.request.urlopen(urllib.request.Request(f"{COMFY}/free", data=json.dumps({"unload_models": True, "free_memory": True}).encode(),
+                                                           headers={"Content-Type": "application/json"}), timeout=30)
+        except Exception: pass
+        why = ""
+        if DR3.voice_tool_ready() and ((DR3.UNIT and DR3.server_built()) or d3_health()):
+            try:
+                job["progress"].update(phase="preparing the Drama 3 voice file (first use of this voice: ~20 s)"); save()
+                vworker("voice3", vd, vid, t=900)
+                up, why = d3_server_up(job)
+                if up:
+                    job["progress"].update(phase="speaking the voice-over with Fish Audio Drama 3 (speech server)"); save()
+                    r = vworker("say3s", vd, text, vo, vid, t=3600); D3S["last"] = time.time()
+                    job["vo_check"] = r.get("wordcheck"); job["vo_path"] = "say3s"
+                    job["vo_engine"] = "Fish Audio Drama 3 · speech server (drama-tensorfold) — Built with Fish Audio"; return True
+            except RuntimeError as e:
+                if str(e) == "cancelled": raise
+                why = str(e)[:240]
+        elif DR3.old_built(): why = ""                                       # only the per-take build is set up: no note needed
+        else: why = "the drama-tensorfold server is not set up"
+        if why: _d3_note(job, f"Drama 3 server path failed ({why}); trying the per-take build")
+        if DR3.old_built():
+            if DR3.UNIT and d3_active() and not d3_health(): d3_stop()       # a half-started server would starve the per-take run
+            try:
+                job["progress"].update(phase="speaking the voice-over with Fish Audio Drama 3 (per-take, loads ~18 s)"); save()
+                r = vworker("say3", vd, text, vo, t=1800)
+                job["vo_check"] = r.get("wordcheck"); job["vo_path"] = "say3"
+                job["vo_engine"] = "Fish Audio Drama 3 · per-take (drama3-generate) — Built with Fish Audio"; return True
+            except RuntimeError as e:
+                _d3_note(job, f"Drama 3 per-take failed ({str(e)[:200]})")
+        _d3_note(job, "spoken with Qwen3-TTS instead"); job["vo_path"] = "say (fallback: Drama 3 failed)"; return False
+    finally:
+        D3S["busy"] = False
 
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -1310,7 +1437,8 @@ def state():
             "presets": {k: {**v, "est5": W.estimate_s(k, 5), "est15": W.estimate_s(k, 15)} for k, v in W.VIDEO.items()},
             "image_models": W.image_models(), "edit_models": W.edit_models(), "tf_ready": W.tf_ready(), "vae8_ready": W.vae8_ready(), "cast_ready": W.cast_ready(), "music_ready": {e: MU.ready(e) for e in MU.ENGINES}, "gm": MT.GM, "kits": MT.KITS, "music_engines": MU.ENGINES, "music_keys": MU.KEYS, "image_preset": W.IMAGE_PRESET, "guide_frames": W.GUIDE_FRAMES, "director": DIR.status(), "voices": voices(),
             "voice_ready": os.path.exists(TTS_PY) and os.path.isdir(f"{C.MODELS}/Qwen3-TTS-12Hz-1.7B-Base"), "brand": {"tenant": C.TENANT_NAME},
-            "drama3_ready": all(os.path.exists(x) for x in (f"{C.DRAMA3_DIR}/bin/drama3-generate", f"{C.DRAMA3_DIR}/codec-v1.safetensors", f"{C.DRAMA3_MODEL}/config.json")),
+            "drama3_ready": DR3.offered(), "drama3_local": DR3.local(),
+            "drama3_server": {"built": DR3.fast_ready(), "up": d3_active(), "idle_stop_s": DR3.IDLE_STOP_S if DR3.UNIT else 0},
             "lr_ready": lr_ready(), "lr_models": list(W.LR_IMAGE), "lr_sizes": [f"{a}x{b}" for a, b in W.LR_GO_SIZES], "lr_n": W.LR_GO_N,
             "lr": {"busy": LRF["busy"], "idle_stop_s": LR_IDLE_S if lr_can_stop() else 0},
             "broker": BR.status()}
@@ -1592,6 +1720,7 @@ def main():
         if j["status"] == "running": j.update(status="failed", error="the studio restarted during this render")
     save(); WS.start(); threading.Thread(target=worker, daemon=True).start()
     if lr_ready() and lr_can_stop() and LR_IDLE_S > 0: threading.Thread(target=lr_idle, daemon=True).start()   # stops an idle LocalRouter
+    if DR3.UNIT and DR3.IDLE_STOP_S > 0: threading.Thread(target=d3_idle, daemon=True).start()   # stops an idle Drama 3 speech server
     threading.Thread(target=mem_guard, daemon=True).start(); comfy_oom_first()  # the memory guard
     srv = ThreadingHTTPServer((C.HOST, PORT), H); print(f"Lion AI Studios on http://{C.HOST}:{PORT}", flush=True); srv.serve_forever()
 

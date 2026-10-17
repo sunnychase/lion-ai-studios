@@ -60,6 +60,18 @@ TRASH = os.path.join(STUDIO_HOME, "trash")                  # deleted renders an
 # The narrator's "Voice engine" menu offers it only when the engine and the weights are both found.
 DRAMA3_DIR = _p(E("DRAMA3_DIR", "~/.local/opt/tensorfold-studio/drama3"))   # bin/drama3-generate, lib/libtensorfold_drama3.so, codec-v1.safetensors
 DRAMA3_MODEL = _p(E("DRAMA3_MODEL", os.path.join(MODELS, "drama-3")))       # huggingface.co/fishaudio/drama-3 (Fish Audio Community License)
+# the fast path: drama-tensorfold's on-demand loopback speech server (docs/DRAMA3.md, "Fast server"); tried before the per-take build
+DRAMA3_SERVER_DIR = _p(E("DRAMA3_SERVER_DIR", "~/src/drama-tensorfold"))   # a checkout of github.com/plotarmordev/drama-tensorfold, built
+DRAMA3_ENGINE_BIN = _p(E("DRAMA3_ENGINE_BIN", os.path.join(DRAMA3_SERVER_DIR, "build/tensorfold/zig-out/native/bin/tensorfold-native")))
+DRAMA3_PORT = int(E("DRAMA3_PORT", "18793"))                                 # the server listens on 127.0.0.1 only
+DRAMA3_VOICE_ENV_PY = _p(E("DRAMA3_VOICE_ENV_PY", os.path.join(STUDIO_HOME, "envs/drama3-voice/bin/python")))  # makes the voice files
+DRAMA3_SGLANG_OMNI_DIR = _p(E("DRAMA3_SGLANG_OMNI_DIR", "~/src/sglang-omni"))  # sgl-project/sglang-omni checked out at ab095ef9
+DRAMA3_SERVICE = E("DRAMA3_SERVICE", "")                  # systemd --user unit (systemd/studio-drama3.service.example) started for a voice-over;
+                                                          # empty = the studio only uses a server that already answers on DRAMA3_PORT
+DRAMA3_GPU_LOCK = _p(E("DRAMA3_GPU_LOCK", os.path.join(STUDIO_HOME, "drama3/gpu.lock")))   # the launcher's shared GPU lock file
+DRAMA3_IDLE_S = int(E("DRAMA3_IDLE_S", "120"))            # stop the unit this long after its last voice-over (it holds ~54 GiB)
+DRAMA3_FETCH_CMD = E("DRAMA3_FETCH_CMD", "")              # optional fetch hook: a shell command that puts the checkpoint into DRAMA3_MODEL
+                                                          # when it is missing (run with DRAMA3_MODEL in its environment); empty = report "not installed"
 
 # ── optional: Ming-Image-0.1-Design (runs outside ComfyUI, in its own venv; see docs/MING.md) ──────────────────────────────────
 # The Image menu lists it only when the weights, the official code and the venv are all found.

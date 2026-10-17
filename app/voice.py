@@ -8,6 +8,10 @@
   cut DIR START END [OUT]  the chosen window of vocals.wav -> OUT/ref.wav (24 kHz mono, level-normalised) + ref_text (the words inside it)
   say DIR TEXT OUT.wav   Qwen3-TTS-12Hz-1.7B-Base clones the voice in DIR (ref.wav + its transcript) and speaks TEXT; Whisper checks each take
   say3 DIR TEXT OUT.wav  optional: Fish Audio Drama 3 (TensorFold CUDA port) in the voice of DIR, word-checked — Built with Fish Audio
+  voice3 DIR VID         optional: DIR's ref.wav + its transcript -> a Drama 3 voice file (drama-tensorfold's tools/zig/drama_voice.py, the
+                         pinned sglang-omni encoder, in DRAMA3_VOICE_ENV_PY); cached by audio sha256 + transcript
+  say3s DIR TEXT OUT.wav VID  optional: Fish Audio Drama 3 through the running drama-tensorfold speech server (POST /v1/audio/speech,
+                         references inline), word-checked and re-drawn like say/say3 — Built with Fish Audio
 Prints one JSON line on success; exits non-zero with the reason on failure."""
 import json, os, shutil, subprocess, sys, time
 
@@ -266,11 +270,12 @@ def say(d, text, out, takes=3):
                       "wordcheck": {k: chk.get(k) for k in ("action", "words", "matched", "coverage", "missing", "reason", "heard", "leading_extra", "x_vector_only")}}))
 
 
-D3 = C.DRAMA3_DIR; D3_MODEL = C.DRAMA3_MODEL
+import drama3 as DR3  # noqa: E402  (every Drama 3 path, from config.py)
+D3 = DR3.OLD_DIR; D3_MODEL = DR3.CKPT
 
 
 def drama3_ready():
-    return all(os.path.exists(x) for x in (f"{D3}/bin/drama3-generate", f"{D3}/codec-v1.safetensors", f"{D3_MODEL}/config.json"))
+    return DR3.old_built() and DR3.local()
 
 
 def say3(d, text, out, takes=3):
@@ -304,6 +309,122 @@ def say3(d, text, out, takes=3):
                       "wordcheck": {k: chk.get(k) for k in ("action", "words", "matched", "coverage", "missing", "reason", "heard", "leading_extra")}}))
 
 
+def _sha256_file(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for b in iter(lambda: f.read(1 << 20), b""): h.update(b)
+    return h.hexdigest()
+
+
+def _voice_ok(v):
+    """a drama3-voice/1 file the server would load: [10, frames] codes in [0, 4096) matching codes_sha256 (little-endian int32, codebook-major)"""
+    import hashlib
+    rows = v.get("vq_codes")
+    if v.get("format") != "drama3-voice/1" or not isinstance(v.get("text"), str) or not v["text"].strip(): return False
+    if not isinstance(rows, list) or len(rows) != 10 or not rows[0] or any(not isinstance(r, list) or len(r) != len(rows[0]) for r in rows): return False
+    if any(not isinstance(c, int) or c < 0 or c >= 4096 for r in rows for c in r): return False
+    return hashlib.sha256(b"".join(c.to_bytes(4, "little", signed=True) for r in rows for c in r)).hexdigest() == v.get("codes_sha256")
+
+
+def voice3(d, vid):
+    """optional: the Drama 3 voice file for DIR (ref.wav + its ref.json transcript), made once with drama-tensorfold's drama_voice.py (the
+    pinned sglang-omni reference encoder, bf16 on CUDA, ~2.6 GB / 10-20 s) and reused while ref.wav and the transcript are unchanged. Written
+    under a hidden temp name and renamed, so a server reading its voices directory never sees half a file."""
+    if not DR3.voice_tool_ready(): raise RuntimeError("the Drama 3 voice tool is not installed (drama-tensorfold build / DRAMA3_VOICE_ENV_PY / DRAMA3_SGLANG_OMNI_DIR; see docs/DRAMA3.md)")
+    if not DR3.local(): raise RuntimeError("the Drama 3 weights are not on this machine (DRAMA3_MODEL)")
+    ref = json.load(open(f"{d}/ref.json")); text = (ref.get("ref_text") or "").strip(); wav = f"{d}/ref.wav"
+    if not text: raise RuntimeError("this voice has no reference transcript")
+    os.makedirs(DR3.VOICES, exist_ok=True)
+    name = DR3.voice_name(vid); out = f"{DR3.VOICES}/{name}.json"; asha = _sha256_file(wav)
+    try:
+        v = json.load(open(out))
+        if v.get("audio_sha256") == asha and v.get("text") == text and _voice_ok(v):
+            print(json.dumps({"ok": True, "voice_file": out, "cached": True, "frames": v.get("frames")})); return
+    except (OSError, ValueError): pass
+    tmp_txt, tmp_out = f"{DR3.VOICES}/.{name}.txt.tmp", f"{DR3.VOICES}/.{name}.json.tmp"
+    open(tmp_txt, "w", encoding="utf-8").write(text + "\n")
+    try:
+        sh([DR3.VOICE_ENV_PY, DR3.VOICE_TOOL, "--reference", DR3.SGL_REF, "--checkpoint", DR3.CKPT, "--audio", wav, "--text", tmp_txt,
+            "--out", tmp_out, "--device", "cuda"], 600)
+        v = json.load(open(tmp_out))
+        if not _voice_ok(v) or v.get("audio_sha256") != asha: raise RuntimeError("the voice tool wrote a file that does not check out")
+        os.replace(tmp_out, out)
+    finally:
+        for f in (tmp_txt, tmp_out):
+            if os.path.exists(f): os.remove(f)
+    print(json.dumps({"ok": True, "voice_file": out, "cached": False, "frames": v.get("frames"), "encoder": v.get("encoder")}))
+
+
+def _chunks(text, limit=1500):
+    """split at sentence ends into pieces <= limit chars (the server takes <= 4096; --max-frames 4096 ~ 190 s ~ 2700 chars)"""
+    import re
+    out, cur = [], ""
+    for s in re.split(r"(?<=[.!?…])\s+", text.strip()):
+        while len(s) > limit:                                                # one huge sentence: cut at the last comma/space before the limit
+            k = max(s.rfind(", ", 0, limit), s.rfind(" ", 0, limit)); k = k if k > limit // 3 else limit
+            if cur: out.append(cur); cur = ""
+            out.append(s[:k + 1].strip()); s = s[k + 1:].strip()
+        if cur and len(cur) + 1 + len(s) > limit: out.append(cur); cur = s
+        else: cur = f"{cur} {s}".strip()
+    if cur: out.append(cur)
+    return [c for c in out if c]
+
+
+def _d3_post(body, t=900):
+    """POST /v1/audio/speech -> (wav bytes, X-Finish-Reason). 503 = the single slot is busy: wait and retry; 400 = refused (its message)."""
+    import urllib.request, urllib.error
+    data = json.dumps(body, ensure_ascii=False).encode()
+    for _ in range(60):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(f"{DR3.URL}/v1/audio/speech", data=data, headers={"Content-Type": "application/json"}), timeout=t) as r:
+                return r.read(), (r.headers.get("X-Finish-Reason") or "stop")
+        except urllib.error.HTTPError as e:
+            if e.code == 503: time.sleep(3); continue
+            raise RuntimeError(f"Drama 3 server HTTP {e.code}: {(e.read() or b'').decode('utf-8', 'replace')[:300]}")
+    raise RuntimeError("the Drama 3 server stayed busy (503) for 3 minutes")
+
+
+def say3s(d, text, out, vid, takes=3):
+    """optional: speak TEXT in the voice of DIR through the drama-tensorfold speech server (Built with Fish Audio). The voice file's transcript
+    + vq_codes ride INLINE as `references` (no server restart per voice). Same Whisper word check and re-draws as say/say3. The server seeds
+    each synthesis from its prompt rows (no seed field), so a re-draw trims 3 more frames (~0.14 s, the breath after the last word) off the
+    end of the reference codes — a different prompt, hence a new draw. A reply that ends in `length` or `silence` is re-drawn."""
+    import io, torch, numpy as np, soundfile as sf
+    from transformers import pipeline
+    import wordcheck as WC
+    v = json.load(open(f"{DR3.VOICES}/{DR3.voice_name(vid)}.json"))
+    if not _voice_ok(v): raise RuntimeError("the Drama 3 voice file does not check out — make it again (voice3)")
+    codes, vtext = v["vq_codes"], v["text"]
+    asr = None; parts, checks, fins, sr0 = [], [], [], None
+    for chunk in _chunks(text):
+        best = None
+        for k in range(max(1, int(takes))):
+            trim = 3 * k if len(codes[0]) > 3 * k + 40 else 0
+            ref = [r[:len(r) - trim] for r in codes] if trim else codes
+            wavb, fin = _d3_post({"model": DR3.MODEL, "input": chunk, "references": [{"text": vtext, "vq_codes": ref}], "response_format": "wav"})
+            w, sr = sf.read(io.BytesIO(wavb), dtype="float32"); w = w.mean(1) if w.ndim > 1 else w
+            if asr is None: asr = pipeline("automatic-speech-recognition", model=WHISPER, dtype=torch.float16, device="cuda:0")
+            x = np.interp(np.arange(0, len(w), sr / 16000), np.arange(len(w)), w).astype(np.float32)
+            said = asr({"raw": x, "sampling_rate": 16000}, generate_kwargs={"task": "transcribe"}).get("text", "")
+            chk = WC.check_text(chunk, said); chk["take"] = k + 1; chk["finish"] = fin; lead = _leading_extra(chunk, said); chk["leading_extra"] = lead
+            if lead > 1 or len(chk.get("tail_words") or []) > 2: chk["action"], chk["reason"] = "redraw", "reference text leaked"
+            if fin != "stop": chk["action"], chk["reason"] = "redraw", f"the reply ended in '{fin}' (clipped or stalled)"
+            score = (chk["action"] != "redraw", fin == "stop", chk["coverage"], -chk["longest_missing_run"])
+            if best is None or score > best[0]: best = (score, w, sr, chk)
+            if chk["action"] != "redraw": break
+        _, w, sr, chk = best
+        if sr0 and sr != sr0: raise RuntimeError("the server changed sample rate between pieces")
+        sr0 = sr; parts.append(w); checks.append(chk); fins.append(chk["finish"])
+    gap = np.zeros(int(0.35 * sr0), dtype=np.float32)
+    w = np.concatenate([y for i, p in enumerate(parts) for y in ((gap, p) if i else (p,))])
+    sf.write(out, w, sr0)
+    worst = min(checks, key=lambda c: (c["action"] != "redraw", c["coverage"]))
+    print(json.dumps({"ok": True, "out": out, "engine": "drama3-server", "path": "say3s", "sr": sr0, "seconds": round(len(w) / sr0, 2),
+                      "pieces": len(parts), "finish": fins, "takes": [c["take"] for c in checks], "credit": "Built with Fish Audio",
+                      "wordcheck": {k: worst.get(k) for k in ("action", "words", "matched", "coverage", "missing", "reason", "heard", "leading_extra", "finish")}}))
+
+
 def _leading_extra(text, said):
     """words heard before the first word of the text (normalised as wordcheck does)"""
     import wordcheck as WC, difflib
@@ -323,6 +444,8 @@ if __name__ == "__main__":
         elif c == "cutparts": cutparts(sys.argv[2], sys.argv[3], sys.argv[4])
         elif c == "say": say(sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5]) if len(sys.argv) > 5 else 3)
         elif c == "say3": say3(sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5]) if len(sys.argv) > 5 else 3)
+        elif c == "voice3": voice3(sys.argv[2], sys.argv[3])
+        elif c == "say3s": say3s(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], int(sys.argv[6]) if len(sys.argv) > 6 else 3)
         elif c == "stems": stems(sys.argv[2], sys.argv[3])
         else: raise RuntimeError(__doc__)
     except Exception as e:

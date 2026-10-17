@@ -1,0 +1,23 @@
+# EXAMPLE: the Fish Audio Drama 3 speech server (drama-tensorfold's recipe/pilot.py) as an on-demand systemd --user unit for the
+# narrator's optional Drama 3 engine (docs/DRAMA3.md, "Fast server"). Built with Fish Audio.
+# Not installed by scripts/install_services.sh. To use it: replace @REPO@ with the path of this repository, copy it to
+# ~/.config/systemd/user/studio-drama3.service, run `systemctl --user daemon-reload`, and set in studio.env:
+#   DRAMA3_SERVICE=studio-drama3.service
+# The studio starts it for a Drama 3 voice-over (after freeing its own memory holders: the launcher needs ~88 GiB free to load and
+# caps the server at 54 GiB) and stops it DRAMA3_IDLE_S after the last one. There is no [Install] section on purpose: it never starts
+# at boot. app/drama3.py reads the paths from studio.env and execs pilot.py with a fresh evidence directory; the server listens on
+# 127.0.0.1:DRAMA3_PORT only. Keep it there: letting other people send text to it can be a hosted service under the Fish Audio
+# Community License, which needs a separate licence from Fish Audio.
+[Unit]
+Description=Fish Audio Drama 3 speech server for Lion AI Studios (drama-tensorfold, loopback, on demand) — Built with Fish Audio
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO@
+# loaded through bash so $HOME and quotes in studio.env work
+ExecStart=/bin/bash -c 'set -a; . @REPO@/studio.env; set +a; exec /usr/bin/python3 @REPO@/app/drama3.py serve'
+# pilot.py stops its own transient server unit on SIGTERM and holds the GPU lock until that unit is inactive: signal pilot.py first
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=90
+Restart=no

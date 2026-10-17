@@ -4,6 +4,8 @@ Updates to Lion AI Studios, newest first. The project has no version numbers; ea
 
 ## 2026-10-16 (third update) — Showcase samples, memory guard
 
+- **README:** an animated preview of the showcase reel at the top (`docs/media/preview.webp`, 14 s, links to the reel); the Video builder
+  screenshot moves down to the other screenshots.
 - **New samples** (`samples/`, details in [samples/README.md](samples/README.md)): a one-minute showcase reel; a 62 s matrix-math
   explainer cut from ten Fast HD shots to a 128 BPM score with a synthetic narrator; a three-person café scene in Cast mode, each
   person speaking in their own synthetic voice; an ink fluid-flow clip; eleven new stills (motorsport, dinosaurs, galaxies,

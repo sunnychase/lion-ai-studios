@@ -28,7 +28,8 @@ Video with sound · images · music · voices · a director that writes and revi
   <a href="#contributing">Contributing</a>
 </p>
 
-<p align="center"><img src="docs/screenshots/desktop-video.png" width="100%" alt="The Video builder"></p>
+<p align="center"><a href="samples/video/showcase-reel-59s.mp4"><img src="docs/media/preview.webp" width="100%" alt="Lion AI Studios: hyperreal stills, video with sound, a three-person scene with synthetic voices, an image edit and an explainer, all made on one DGX Spark"></a><br>
+<sub>▶ <a href="samples/video/showcase-reel-59s.mp4"><b>Watch the 59-second showcase reel</b></a> (MP4, 720p, with sound): stills, video with its own sound, a three-person scene in Cast mode with synthetic voices, an edit before/after and an explainer. Everything in it was made with this repo on one DGX Spark; more in <a href="#samples">Samples</a>.</sub></p>
 
 ## Quick start
 
@@ -180,6 +181,7 @@ All of these were made with this repo on one DGX Spark. Prompts and settings are
 [Lion's Dawn, MIDI with chosen instruments](samples/music/lions-dawn-midi-instruments.mp3) and
 [the same piece restyled by AI](samples/music/lions-dawn-midi-ai-restyle.mp3) ([the .mid](samples/music/lions-dawn.mid))
 
+<p><img src="docs/screenshots/desktop-video.png" width="100%" alt="The Video builder"></p>
 <p><img src="docs/screenshots/desktop-library.png" width="49%" alt="Library"> <img src="docs/screenshots/desktop-music.png" width="49%" alt="Music builder"></p>
 <p><img src="docs/screenshots/phone-video.png" width="24%" alt="Phone: video"> <img src="docs/screenshots/phone-library.png" width="24%" alt="Phone: library"> <img src="docs/screenshots/desktop-image.png" width="49%" alt="Image builder"></p>
 

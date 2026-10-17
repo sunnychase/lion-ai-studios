@@ -6,7 +6,7 @@ file metadata was stripped. The 10-16 reel, explainer and café scene were assem
 
 ## Showcase, 2026-10-16
 
-### `video/showcase-reel-59s.mp4`
+### `video/showcase-reel-57s.mp4`
 A one-minute tour of what the studio makes: ten stills, three Fast HD clips with their own sound, two shots of the café scene
 below (with their voices), the watch edit as a before/after wipe, an excerpt of the matrix explainer, and an end card. The
 footage, stills, voices and score all came out of the studio; the cuts, slow camera moves, captions and the mix were put

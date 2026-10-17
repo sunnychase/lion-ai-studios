@@ -28,8 +28,8 @@ Video with matching sound (MiniMax H3) · multi-shot films · cast scenes where 
   <a href="#contributing">Contributing</a>
 </p>
 
-<p align="center"><a href="samples/video/showcase-reel-59s.mp4"><img src="docs/media/preview.webp" width="100%" alt="Lion AI Studios: hyperreal stills, video with sound, a three-person scene with synthetic voices, an image edit and an explainer, all made on one DGX Spark"></a><br>
-<sub>▶ <a href="samples/video/showcase-reel-59s.mp4"><b>Watch the 59-second showcase reel</b></a> (MP4, 720p, with sound): stills, video with its own sound, a three-person scene in Cast mode with synthetic voices, an edit before/after and an explainer. Everything in it was made with this repo on one DGX Spark; more in <a href="#samples">Samples</a>.</sub></p>
+<p align="center"><a href="samples/video/showcase-reel-57s.mp4"><img src="docs/media/preview.webp" width="100%" alt="Lion AI Studios: hyperreal stills, video with sound, a three-person scene with synthetic voices, an image edit and an explainer, all made on one DGX Spark"></a><br>
+<sub>▶ <a href="samples/video/showcase-reel-57s.mp4"><b>Watch the 57-second showcase reel</b></a> (MP4, 720p, with sound): stills, video with its own sound, two shots of a three-person scene in Cast mode with synthetic voices, an edit before/after and an explainer. Everything in it was made with this repo on one DGX Spark; more in <a href="#samples">Samples</a>.</sub></p>
 
 ## Quick start
 
@@ -161,7 +161,7 @@ All of these were made with this repo on one DGX Spark. Prompts and settings are
 
 | | |
 |---|---|
-| [<img src="samples/video/showcase-reel-59s.jpg" width="100%">](samples/video/showcase-reel-59s.mp4)<br>**Showcase reel** (59 s): stills, video with sound, a three-person scene, an edit and an explainer, on a studio-made score | [<img src="samples/video/matrix-math-explainer-62s.jpg" width="100%">](samples/video/matrix-math-explainer-62s.mp4)<br>**Matrix math explainer** (62 s): ten AI shots cut to a 128 BPM score, narrated by a synthetic voice; every number on screen is computed |
+| [<img src="samples/video/showcase-reel-57s.jpg" width="100%">](samples/video/showcase-reel-57s.mp4)<br>**Showcase reel** (57 s): stills, video with sound, a three-person scene, an edit and an explainer, on a studio-made score | [<img src="samples/video/matrix-math-explainer-62s.jpg" width="100%">](samples/video/matrix-math-explainer-62s.mp4)<br>**Matrix math explainer** (62 s): ten AI shots cut to a 128 BPM score, narrated by a synthetic voice; every number on screen is computed |
 | [<img src="samples/video/cafe-conversation-cast-3-voices-24s.jpg" width="100%">](samples/video/cafe-conversation-cast-3-voices-24s.mp4)<br>**Three people, one café** (24 s): Cast mode from three portraits, each speaking in their own synthetic voice; every line checked word for word | [<img src="samples/video/ink-fluid-flow-fasthd-8s.jpg" width="100%">](samples/video/ink-fluid-flow-fasthd-8s.mp4)<br>**Fluid flow**: 8 s Fast HD, ink vortices with sound (review 8/10) |
 | <img src="samples/images/f1-car-flux3-klein.jpg" width="100%"><br>FLUX 3 Image Klein: motorsport | <img src="samples/images/t-rex-flux3-klein.jpg" width="100%"><br>FLUX 3 Image Klein: dinosaurs |
 | <img src="samples/images/spiral-galaxy-flux3-klein.jpg" width="100%"><br>FLUX 3 Image Klein: a spiral galaxy | <img src="samples/images/milky-way-krea2-realism.jpg" width="100%"><br>Krea 2 Turbo + realism LoRA: night sky |

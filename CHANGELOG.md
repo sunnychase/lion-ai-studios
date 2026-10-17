@@ -2,6 +2,14 @@
 
 Updates to Lion AI Studios, newest first. The project has no version numbers; each entry is dated.
 
+## 2026-10-17 — Showcase reel back in sync
+
+- **Showcase reel** (`samples/video/showcase-reel-57s.mp4`, was `showcase-reel-59s.mp4`): the café voices were 2 s ahead of the
+  picture. The assembly script's title card ran 4.5 s instead of 2.5 s (a frame count picked up late from the end card), while the
+  voices were placed for 2.5 s. Re-cut with each voice placed on its own speaker's first frame and measured: 0 ms off on both
+  speakers. The reel is 2 s shorter; the cast caption now reads "From a three-person scene" (two of the three speakers are in the
+  reel). The README preview and poster are rebuilt from the new cut.
+
 ## 2026-10-16 (third update) — Showcase samples, memory guard
 
 - **README:** an animated preview of the showcase reel at the top (`docs/media/preview.webp`, 14 s, links to the reel); the Video builder

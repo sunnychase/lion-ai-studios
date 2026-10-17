@@ -1,220 +1,259 @@
-"""shot.py — copied into Lion AI Studios from drowzeys/keys-Wasserman-Slate-AI-Studio-powered-by-TensorFold (app/shot.py, Apache-2.0,
-commit 0677c2c); unmodified below this paragraph except `one_shot` (also reads "cut to") and `cuts` (bursts of 3+ flagged frames are not cuts). Used by studio_server.directed(). See NOTICE.md.
+"""shot.py — is a rendered clip the one shot it was asked to be?
 
-Whether a clip is the one shot it was asked for: its keyframes held, and no cut inside it.
+    check(clip, first=None, last=None, canvas=None, single=True)
+        -> {passed, note, cuts, first, last, window, frames, fps, seconds}
+    one_shot(prompt)   -> True unless the prompt itself asks for a cut
+    longest_take(clip) -> {start, end, seconds, frames}: the longest stretch with no cut
 
-Two things FastH3 did in a production run of 32 first-and-last-frame clips (1280x736, 8 and 10 seconds, 8 passes on
-TensorFold's CUDA engine), neither of which the prompt asked for:
+How it looks: ffmpeg decodes the clip small and grey into a raw pipe (W = 128 px, numpy reads it; no PyAV). Held frames (a
+frame that repeats the one before while its neighbours move) are skipped. Between consecutive pictures two numbers: the mean
+absolute difference (MAD, 0..255) and the correlation of the two pictures after each has its mean removed, the best over
+shifts of up to 3 px (1 = same picture, 0 = unrelated; a pan or shake is not a new picture). A hard cut is a change whose MAD
+is an outlier against the median of its neighbours AND whose correlation is low AND that stands alone (the changes just
+before and after are small next to it); a cut through one blended frame counts when both steps are sharp. A burst of 3 or
+more flagged frames within 6 frames is something crossing the lens (petals, a hand, a flash), not a cut, and is ignored.
 
-- A first keyframe not held. In ComfyUI's node and in the Mac engine alike a keyframe is a row of the sequence the
-  model reads beside the frames, not a frame written into the clip: the model reproduces it at its moment, and
-  almost always does. One clip of the 32 opened on another picture (a close-up laid over the keyframe), so the join
-  with the clip before it jumped. Rendered again on another Spark with the same seed and prompt, every frame came
-  out the same (a difference of 0.00 over all 243), the missed keyframe with them; and on ComfyUI's own bfloat16
-  blocks in place of TensorFold's int8 engine the clip was another one that missed its first frame the same way
-  (70.9 against 74.4). It is what FastH3 does with that seed and prompt, not the engine and not a slip of one render.
-- A hard cut inside the clip, to a close-up that is in neither keyframe (9 of the 32 clips, the three dining-hall
-  ones among them, 12 cuts in all).
+Keyframes: with FIRST / LAST (image paths) the clip's opening / closing frames are compared with the image fitted to the
+clip's frame. canvas says how the image was fitted ("crop": scaled to cover and centre-cropped, "pad": letter/pillar-boxed,
+"stretch"); None tries all three and keeps the best. A keyframe is held when its correlation is high and its MAD low.
 
-What is not seen here: the same move to a close-up made by a dissolve through a double exposure, without a cut
-(3 of 8 renders of one such clip did that). Half a second of it measures like half a second of fast movement in the
-run's honest clips, so there is nothing to set a threshold between.
+Needs ffmpeg, ffprobe and numpy when it runs.
 
-Both are measured here on small grey copies of the frames (160 pixels wide), and reported beside the clip like the QA
-gate's verdict; server.py renders the clip once more at the next seed when the job asks for that. Nothing here fails
-a clip that was made, and a machine that cannot read the frames reports the check as not run.
-
-The thresholds are set from that run's clips and nothing else; read them as that, not as a law.
-
-Keyframes (frame 0 against the first picture, the last frame against the last): of 64 comparisons 63 held, with a
-mean difference of 1.4 to 3.9 grey levels (of 255) and a correlation of 0.996 or more; the one that did not: 74.4
-and 0.25. HELD_DIFFERENCE is three times the worst held figure, a sixth of the missed one. One missed keyframe is
-all the run had, so the gap between 3.9 and 74.4 is not explored.
-
-Cuts (each frame against the one before; 7081 pairs): the 11 clean cuts have a correlation of 0.48 or less (9 of
-them under 0.2) and a change 4.2 to 52 times the median change of the twelve frames around them. The twelfth, a jump
-out of a double exposure, has 0.66 and 2.4. Among the 7069 other pairs, fast action reaches a correlation of 0.63
-but at 1.1 times its neighbours (the whole stretch moves), and a whip into a cut reaches 3.5 times its neighbours
-at a correlation of 0.74. So a cut is a correlation under CUT_LIKENESS together with a change of CUT_RATIO times
-the neighbours' or more: halfway between the weakest cut and the nearest other pair on each axis. A cross-fade is not
-a cut and is not flagged: its frames change no faster than the frames around them.
+Calibration (2026-10-16, 36 rendered studio clips + 8 synthetic cuts on a DGX Spark): every cut found (4 clips joined from two
+different renders, one joined through a fade, 3 jump cuts inside one render, and 4 real cuts in 3 rendered clips) except one soft,
+two-frame cut into a fast dance shot; no false cut in the other clips, including petals sweeping the lens (2.75-2.88 s), a
+spinning wheel, sparks and beam effects. The held-frame skip matters: several engines repeat every other frame. Keyframes on
+21 first+last-frame takes: held at correlation >= 0.94 and MAD <= 6.3; the wrong images scored correlation <= 0.44, MAD >= 23.6.
 """
-
-from __future__ import annotations
-
-import shutil
+import json
+import re
 import subprocess
 from pathlib import Path
 
-WIDTH = 160  # the grey copies: 160x92 for a 1280x736 clip
-FPS = 24
-HELD_DIFFERENCE = 12.0  # mean absolute difference, grey levels of 255: over this the keyframe was not held
-HELD_LIKENESS = 0.90    # correlation: under this it was not held either
-CUT_LIKENESS = 0.70     # correlation of a frame with the one before
-CUT_RATIO = 1.75        # its change against the median change of the frames around it
-CUT_WINDOW = 6          # frames on each side
-CUT_FLOOR = 0.5         # grey levels: a still stretch does not make a small change a large ratio
-MARK = "[Shot 2]"       # a prompt that writes a second shot asks for a cut
+W = 128                       # analysis width in pixels; height follows the clip's aspect
+HOLD_MIN, HOLD_FRAC = 1.0, 0.15   # a frame within this of the one before (absolute, or as a share of its neighbours' change) is held
+CUT_RATIO = 3.0               # a cut's MAD is at least this many times the local median MAD
+CUT_FLOOR = 12.0              # ... and at least this much on the 0..255 scale
+CUT_CORR = 0.80               # ... and the two pictures correlate below this even when shifted a few pixels
+ISOLATED = 0.5                # ... and the changes just before and after it are at most this share of it (a cut is a spike)
+LOCAL = 8                     # distinct frames on each side for the local median
+BURST_N, BURST_SPAN = 3, 6    # this many flagged frames within this many frames = something crossing the lens
+HELD_CORR = 0.85              # a keyframe is held at or above this correlation ...
+HELD_MAD = 20.0               # ... and at or below this MAD
+EDGE = 3                      # frames at each end searched for the best keyframe match
+FITS = ("crop", "pad", "stretch")
+
+CUT_WORDS = re.compile(r"\b(?:cut(?:s|ting)?\s+(?:back\s+)?to|smash[\s-]cuts?|jump[\s-]cuts?|hard\s+cuts?\s+to|match[\s-]cuts?|"
+                       r"montage|intercut|cutaway)\b|\[\s*shot\s*[2-9]\d*\s*\]", re.I)
 
 
 def one_shot(prompt: str) -> bool:
-    import re
-    return MARK not in (prompt or "") and not re.search(r"\bcut(s)? to\b|\bsmash cut\b|\bjump cut\b|\bmontage\b", prompt or "", re.IGNORECASE)   # Lion AI Studios: a written cut
+    """True when the prompt describes one continuous shot, False when it asks for a cut ("cut to", "smash cut", "jump cut",
+    "montage", a second "[Shot 2]" heading...)"""
+    return not CUT_WORDS.search(prompt or "")
 
 
-def grey(image, size: tuple[int, int]):
+def _probe(clip) -> dict:
+    o = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0",
+                        "-show_entries", "stream=width,height,avg_frame_rate,r_frame_rate",
+                        "-show_entries", "format=duration", "-of", "json", str(clip)], capture_output=True, text=True, timeout=120)
+    if o.returncode:
+        raise RuntimeError(f"ffprobe failed: {(o.stderr or '').strip()[-200:]}")
+    j = json.loads(o.stdout)
+    s = j["streams"][0]
+
+    def rate(x):
+        a, _, b = (x or "0/1").partition("/")
+        return float(a) / float(b or 1) if float(b or 1) else 0.0
+    fps = rate(s.get("avg_frame_rate")) or rate(s.get("r_frame_rate")) or 24.0
+    return {"w": int(s["width"]), "h": int(s["height"]), "fps": fps, "dur": float(j.get("format", {}).get("duration") or 0)}
+
+
+def _size(info) -> tuple:
+    h = max(2, int(round(W * info["h"] / info["w"] / 2)) * 2)
+    return W, h
+
+
+def frames(clip, info=None):
+    """the clip as a float32 array (n, h, w) of grey frames at the analysis size"""
     import numpy as np
-    from PIL import Image
+    info = info or _probe(clip)
+    w, h = _size(info)
+    o = subprocess.run(["ffmpeg", "-v", "error", "-nostdin", "-i", str(clip), "-an", "-vf", f"scale={w}:{h}:flags=area,format=gray",
+                        "-f", "rawvideo", "-pix_fmt", "gray", "-"], capture_output=True, timeout=600)
+    if o.returncode:
+        raise RuntimeError(f"ffmpeg failed: {o.stderr.decode(errors='replace').strip()[-200:]}")
+    n = len(o.stdout) // (w * h)
+    return np.frombuffer(o.stdout[:n * w * h], np.uint8).reshape(n, h, w).astype(np.float32)
 
-    return np.asarray(image.convert("L").resize(size, Image.Resampling.BILINEAR), np.float32)
 
-
-def frames(clip: Path):
-    """(grey frames [n, h, w] as float32, (width, height) of the clip). PyAV when the environment has it (both
-    builds' do), else ffmpeg; LookupError when this machine has neither."""
-
+def _image(path, w, h, fit):
+    """an image fitted onto a w x h frame the way the renderer may have fitted it, grey, float32 (h, w)"""
     import numpy as np
-
-    try:
-        import av
-    except ImportError:
-        av = None
-    if av is not None:
-        out, size = [], None
-        with av.open(str(clip)) as container:
-            for frame in container.decode(video=0):
-                if size is None:
-                    size = (frame.width, frame.height)
-                    small = (WIDTH, max(2, round(WIDTH * frame.height / frame.width)))
-                out.append(grey(frame.to_image(), small))
-        if not out:
-            raise ValueError(f"no frames in {clip.name}")
-        return np.stack(out), size
-    tool = shutil.which("ffmpeg") or shutil.which("ffmpeg", path="/opt/homebrew/bin:/usr/local/bin")
-    probe = shutil.which("ffprobe") or shutil.which("ffprobe", path="/opt/homebrew/bin:/usr/local/bin")
-    if not tool or not probe:
-        raise LookupError("neither PyAV nor ffmpeg is on this machine")
-    found = subprocess.run([probe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of",
-                            "csv=p=0", str(clip)], capture_output=True, text=True).stdout.strip().split(",")
-    size = (int(found[0]), int(found[1]))
-    small = (WIDTH, max(2, round(WIDTH * size[1] / size[0])))
-    raw = subprocess.run([tool, "-v", "error", "-i", str(clip), "-vf", f"scale={small[0]}:{small[1]}:flags=bilinear", "-pix_fmt",
-                          "rgb24", "-f", "rawvideo", "-"], capture_output=True).stdout
-    count = len(raw) // (small[0] * small[1] * 3)
-    if not count:
-        raise ValueError(f"no frames in {clip.name}")
-    rgb = np.frombuffer(raw[:count * small[0] * small[1] * 3], np.uint8).reshape(count, small[1], small[0], 3).astype(np.float32)
-    return rgb @ np.array([0.299, 0.587, 0.114], np.float32), size  # the same grey as PIL's
+    vf = {"crop": f"scale={w}:{h}:force_original_aspect_ratio=increase:flags=area,crop={w}:{h}",
+          "pad": f"scale={w}:{h}:force_original_aspect_ratio=decrease:flags=area,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2",
+          "stretch": f"scale={w}:{h}:flags=area"}[fit]
+    o = subprocess.run(["ffmpeg", "-v", "error", "-nostdin", "-i", str(path), "-frames:v", "1", "-vf", vf + ",format=gray",
+                        "-f", "rawvideo", "-pix_fmt", "gray", "-"], capture_output=True, timeout=120)
+    if o.returncode or len(o.stdout) < w * h:
+        raise RuntimeError(f"could not read {Path(path).name}: {o.stderr.decode(errors='replace').strip()[-160:]}")
+    return np.frombuffer(o.stdout[:w * h], np.uint8).reshape(h, w).astype(np.float32)
 
 
-def likeness(a, b) -> tuple[float, float]:
-    """(mean absolute difference in grey levels, correlation) of two grey pictures of one size."""
-
+def _corr(a, b) -> float:
     import numpy as np
-
-    one, two = a - a.mean(), b - b.mean()
-    scale = float(np.sqrt((one * one).sum() * (two * two).sum()))
-    return float(np.abs(a - b).mean()), float((one * two).sum() / scale) if scale > 1e-6 else 0.0
-
-
-def fitted(picture: Path, canvas: tuple[int, int], clip: tuple[int, int], small: tuple[int, int], stretch: bool):
-    """A keyframe as the renderer put it in the clip, as a grey copy: stretched onto the generation canvas (the
-    first of a clip's keyframes, on both builds) or fitted by a centre crop (a last frame beside a first), then
-    cropped as the clip was (the 720p preset generates 736 rows and keeps 720)."""
-
-    from PIL import Image, ImageOps
-
-    with Image.open(picture) as opened:
-        image = ImageOps.exif_transpose(opened).convert("RGB")
-    wide, tall = canvas
-    if stretch:
-        image = image.resize((wide, tall), Image.Resampling.LANCZOS)
-    else:
-        image = ImageOps.fit(image, (wide, tall), Image.Resampling.LANCZOS, centering=(0.5, 0.5))
-    # the clip may be the canvas at another scale (the 2x decoder) with rows or columns cropped away
-    scale = max(clip[0] / wide, clip[1] / tall)
-    keep = (min(wide, round(clip[0] / scale)), min(tall, round(clip[1] / scale)))
-    left, top = (wide - keep[0]) // 2, (tall - keep[1]) // 2
-    return grey(image.crop((left, top, left + keep[0], top + keep[1])), small)
+    a = a - a.mean()
+    b = b - b.mean()
+    d = float(np.sqrt((a * a).sum() * (b * b).sum()))
+    return float((a * b).sum() / d) if d > 1e-6 else (1.0 if np.abs(a - b).max() < 1 else 0.0)
 
 
-def held(frame, picture) -> dict:
-    difference, same = likeness(frame, picture)
-    return {"held": difference <= HELD_DIFFERENCE and same >= HELD_LIKENESS, "difference": round(difference, 1), "likeness": round(same, 3)}
+def _shift_corr(a, b, reach=3) -> float:
+    """the best correlation of B with A moved by up to REACH pixels each way: a pan or a shake is not a new picture"""
+    h, w = a.shape
+    best = -1.0
+    for dy in range(-reach, reach + 1):
+        for dx in range(-reach, reach + 1):
+            pa = a[max(0, dy):h + min(0, dy), max(0, dx):w + min(0, dx)]
+            pb = b[max(0, -dy):h + min(0, -dy), max(0, -dx):w + min(0, -dx)]
+            best = max(best, _corr(pa, pb))
+    return best
 
 
-def cuts(stack) -> list[dict]:
-    """The hard cuts in a clip's grey frames: ``frame`` is the first frame of the new shot."""
-
+def distinct(fr) -> list:
+    """indices of the frames that show something new. A frame that barely differs from the one before while its neighbours
+    change a lot is a held frame (12 fps motion doubled to 24, an engine repeating frames) and is skipped, so that the
+    change between two pictures is measured once, not spread over a repeat."""
     import numpy as np
-
-    if len(stack) < 3:
-        return []
-    change = np.abs(stack[1:] - stack[:-1]).mean(axis=(1, 2))
-    found = []
-    for at in range(len(change)):
-        around = np.concatenate([change[max(0, at - CUT_WINDOW):at], change[at + 1:at + 1 + CUT_WINDOW]])
-        ratio = float(change[at] / max(float(np.median(around)), CUT_FLOOR))
-        if ratio < CUT_RATIO:
-            continue
-        _, same = likeness(stack[at], stack[at + 1])
-        if same < CUT_LIKENESS:
-            found.append({"frame": at + 1, "seconds": round((at + 1) / FPS, 2), "likeness": round(same, 2), "ratio": round(ratio, 1)})
-    # Lion AI Studios: a hard cut is one frame; 3+ flagged frames within 6 frames of each other are something crossing the lens (a burst of petals
-    # across a samurai clip, 2.75-2.88 s, measured), not a cut — drop such clusters.
-    keep = [f for f in found if sum(1 for g in found if abs(g["frame"] - f["frame"]) <= 6) < 3]
+    raw = [0.0] + [float(np.abs(fr[i] - fr[i - 1]).mean()) for i in range(1, len(fr))]
+    keep = [0]
+    for i in range(1, len(fr)):
+        around = max(raw[i - 1] if i > 1 else 0.0, raw[i + 1] if i + 1 < len(fr) else 0.0)
+        if raw[i] >= max(HOLD_MIN, HOLD_FRAC * around):
+            keep.append(i)
     return keep
 
 
-def window(count: int, found: list[dict] | None) -> dict:
-    """The longest stretch of a clip without a cut, for an editor to trim to: ``start`` is its first frame, ``end``
-    the frame after its last, ``frames`` their number, ``in`` and ``out`` the same in seconds (what the Editor's
-    timeline takes), ``whole`` whether it is the whole clip. FastH3 opens some clips on an establishing shot nobody
-    asked for and then cuts (4 of 36 in one production run, at frames 10 to 28): the window is then what follows.
-    Of two stretches of one length the later is given, for the same reason."""
+def find_cuts(fr, fps) -> tuple:
+    """(cuts, crossings): cuts = [{frame, t, mad, corr, frames}], ``frame`` the first frame of the new shot and ``frames`` 1, or 2
+    when the change took two steps (a blended frame between the shots); crossings = frame numbers where the picture changed
+    sharply but not as a cut (a burst of changes, or a change that builds up over several frames)"""
+    import numpy as np
+    keep = distinct(fr)
+    m = len(keep)
+    mad = np.zeros(m)
+    for k in range(1, m):
+        mad[k] = float(np.abs(fr[keep[k]] - fr[keep[k - 1]]).mean())
+    sharp = []                                                    # (k, span, change, corr, isolated)
+    k = 1
+    while k < m:
+        lo, hi = max(1, k - LOCAL), min(m, k + LOCAL + 2)
+        around = np.concatenate([mad[lo:k], mad[k + 2:hi]])
+        base = float(np.median(around)) if len(around) else 0.0
+        found = None
+        for span in (1, 2):
+            if k + span - 1 >= m:
+                break
+            a, b = fr[keep[k - 1]], fr[keep[k + span - 1]]
+            change = mad[k] if span == 1 else float(np.abs(b - a).mean())
+            if change < max(CUT_FLOOR, CUT_RATIO * base):
+                continue
+            if span == 2 and not (min(mad[k], mad[k + 1]) >= 0.35 * change
+                                  and max(_shift_corr(fr[keep[k - 1]], fr[keep[k]]), _shift_corr(fr[keep[k]], b)) < CUT_CORR):
+                continue                                          # two steps: each must be a sharp change of its own
+            c = _shift_corr(a, b)
+            if c >= CUT_CORR:
+                continue
+            outside = [mad[j] for j in (k - 1, k + span) if 1 <= j < m]
+            found = (k, span, change, c, (max(outside) if outside else 0.0) <= ISOLATED * change)
+            break
+        if found:
+            sharp.append(found)
+        k += found[1] if found and found[4] else 1
+    burst = set()
+    for x in sharp:
+        near = [y for y in sharp if abs(keep[y[0]] - keep[x[0]]) < BURST_SPAN]
+        if len(near) >= BURST_N:
+            burst.update(y[0] for y in near)
+    cuts, crossing = [], []
+    for k, span, change, c, isolated in sharp:
+        i = keep[k]
+        if isolated and k not in burst:
+            cuts.append({"frame": i, "t": round(i / fps, 3), "mad": round(float(change), 1), "corr": round(c, 3), "frames": span})
+        else:
+            crossing.append(i)
+    return cuts, crossing
 
-    marks = [0] + sorted({int(cut["frame"]) for cut in found or [] if 0 < int(cut["frame"]) < count}) + [count]
-    start, end = max(zip(marks, marks[1:]), key=lambda span: (span[1] - span[0], span[0]))
-    return {"start": start, "end": end, "frames": end - start, "in": round(start / FPS, 3), "out": round(end / FPS, 3),
-            "whole": start == 0 and end == count}
+
+def _window(cuts, n, fps) -> dict:
+    edges = [0] + [c["frame"] for c in cuts] + [n]
+    a, b = max(zip(edges, edges[1:]), key=lambda p: p[1] - p[0])
+    return {"start": round(a / fps, 3), "end": round(b / fps, 3), "seconds": round((b - a) / fps, 3), "frames": b - a,
+            "whole": not cuts}
 
 
-def longest_take(clip: Path) -> dict:
-    """The same for a clip on disk, whatever it was asked for: its cuts are looked for first."""
+def _held(img_path, ends, w, h, canvas) -> dict:
+    """compare the image with the clip's frames ``ends`` (a few at one end); the best fit and frame win"""
+    import numpy as np
+    best = None
+    for fit in ([canvas] if canvas in FITS else FITS):
+        img = _image(img_path, w, h, fit)
+        for k, f in ends:
+            m = float(np.abs(f - img).mean())
+            c = _corr(f, img)
+            if best is None or (c, -m) > (best["corr"], -best["mad"]):
+                best = {"corr": round(c, 3), "mad": round(m, 1), "frame": k, "fit": fit}
+    best["held"] = best["corr"] >= HELD_CORR and best["mad"] <= HELD_MAD
+    return best
 
-    stack, _ = frames(Path(clip))
-    found = cuts(stack)
-    return {**window(len(stack), found), "cuts": found, "of": int(len(stack))}
+
+def longest_take(clip) -> dict:
+    """the longest stretch of CLIP with no hard cut"""
+    info = _probe(clip)
+    fr = frames(clip, info)
+    cuts, _ = find_cuts(fr, info["fps"])
+    return _window(cuts, len(fr), info["fps"])
 
 
-def check(clip: Path, first: Path | None = None, last: Path | None = None, canvas: tuple[int, int] | None = None,
-          single: bool = True, alone_stretched: bool = True) -> dict:
-    """The report for one take. ``first`` and ``last`` are the keyframe pictures the clip was given (None for none),
-    ``canvas`` the size it was generated at (the clip's own when not given), ``single`` whether it was asked for as
-    one shot. ``alone_stretched``: a last frame without a first is stretched onto the canvas (the Mac engine) and
-    not fitted by a centre crop (ComfyUI's node, which crops it always). ``passed`` is False when a keyframe was not
-    held or a cut was found in a single shot."""
+def check(clip, first=None, last=None, canvas=None, single=True) -> dict:
+    """the frame check of one take. ``single``: the prompt asked for one continuous shot, so any cut fails it."""
+    info = _probe(clip)
+    fr = frames(clip, info)
+    n, fps = len(fr), info["fps"]
+    if n < 2:
+        return {"passed": True, "note": "too few frames to check", "cuts": [], "first": None, "last": None,
+                "window": None, "frames": n, "fps": round(fps, 3), "seconds": round(n / fps, 3)}
+    w, h = fr.shape[2], fr.shape[1]
+    cuts, crossing = find_cuts(fr, fps)
+    head = [(k, fr[k]) for k in range(min(EDGE, n))]
+    tail = [(k, fr[k]) for k in range(max(0, n - EDGE), n)]
+    fh = _held(first, head, w, h, canvas) if first else None
+    lh = _held(last, tail, w, h, canvas) if last else None
 
-    stack, size = frames(Path(clip))
-    small = (stack.shape[2], stack.shape[1])
-    canvas = canvas or size
-    report = {"frames": int(len(stack)), "first": None, "last": None, "cuts": cuts(stack) if single else None}
-    # where to trim to when the model cut all the same: the longest stretch without one (None when cuts were asked for)
-    report["window"] = window(len(stack), report["cuts"]) if single else None
-    if first is not None:
-        report["first"] = held(stack[0], fitted(Path(first), canvas, size, small, True))
-    if last is not None:
-        report["last"] = held(stack[-1], fitted(Path(last), canvas, size, small, first is None and alone_stretched))
-    said = []
-    if report["first"] and not report["first"]["held"]:
-        said.append("the clip does not open on its first frame")
-    if report["last"] and not report["last"]["held"]:
-        said.append("the clip does not end on its last frame")
-    if report["cuts"]:
-        times = ", ".join(f"{cut['seconds']:g} s" for cut in report["cuts"][:4])
-        said.append(f"{len(report['cuts'])} cut{'s' if len(report['cuts']) > 1 else ''} inside the shot, at {times}")
-        said.append(f"the longest stretch without one is frames {report['window']['start']} to {report['window']['end'] - 1} "
-                    f"({report['window']['frames'] / FPS:.2f} s)")
-    report["passed"] = not said
-    report["note"] = "; ".join(said)
-    return report
+    said, passed = [], True
+    if cuts and single:
+        passed = False
+        said.append(f"{len(cuts)} hard cut{'s' if len(cuts) > 1 else ''} inside a one-shot clip at "
+                    + ", ".join(f"{c['t']:.2f} s" for c in cuts))
+    elif cuts:
+        said.append(f"{len(cuts)} cut{'s' if len(cuts) > 1 else ''} (the prompt asks for them)")
+    for name, r in (("first", fh), ("last", lh)):
+        if r and not r["held"]:
+            passed = False
+            said.append(f"{name} frame not held (correlation {r['corr']:.2f}, difference {r['mad']:.0f})")
+    if passed:
+        bits = ["one continuous shot" if not cuts else "cuts as asked"]
+        held = [nm for nm, r in (("first", fh), ("last", lh)) if r]
+        if held:
+            bits.append(" and ".join(held) + " frame" + ("s" if len(held) > 1 else "") + " held")
+        said = ["; ".join(bits)]
+    if crossing:
+        said.append(f"fast change at {crossing[0] / fps:.2f}-{crossing[-1] / fps:.2f} s, not a cut (something crossing the lens)")
+    return {"passed": passed, "note": "; ".join(said), "cuts": cuts, "first": fh, "last": lh, "window": _window(cuts, n, fps),
+            "frames": n, "fps": round(fps, 3), "seconds": round(n / fps, 3)}
+
+
+if __name__ == "__main__":
+    import sys
+    a = sys.argv[1:]
+    print(json.dumps(check(a[0], a[1] if len(a) > 1 and a[1] else None, a[2] if len(a) > 2 and a[2] else None), indent=1))

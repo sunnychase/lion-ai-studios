@@ -26,23 +26,6 @@ under its own terms.
   for YouTube's challenges (`DENO_BIN`, else `deno` on PATH).
 - **MuseScore General soundfont** (MIT).
 
-## Code from drowzeys/keys-Wasserman-Slate-AI-Studio (Apache-2.0)
-
-Three files in `app/` come from [drowzeys/keys-Wasserman-Slate-AI-Studio-powered-by-TensorFold-built-with-integrated-Fish-Audio-Drama3](https://github.com/drowzeys/keys-Wasserman-Slate-AI-Studio-powered-by-TensorFold-built-with-integrated-Fish-Audio-Drama3)
-at commit `0677c2c`, licensed under the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0). Each keeps a header
-naming its source; they remain under Apache-2.0, not under this repository's MIT licence.
-
-- `app/wordcheck.py` (from `app/wordcheck.py`): copied unmodified below its header. Its own header credits TensorFold's Drama 3 port
-  (`tensorfold/families/drama3/verify.py`, Apache-2.0) for the rules.
-- `app/shot.py` (from `app/shot.py`): **modified** — `one_shot` also treats a written "cut to" / "smash cut" / "jump cut" / "montage"
-  as asking for a cut, and `cuts` drops bursts of 3 or more flagged frames within 6 frames of each other (something crossing the
-  lens, not a cut).
-- `app/negation.py` (from `app/negation.py`): **modified** — adapted to this studio (its own sentences, its field names, its wording).
-
-Ideas taken from the same repository and written anew for this studio: the edit **noise seed** drawn from the seed and the
-input pictures' bytes (`edit_plan.py`), the **memory guard** with its floor and critical numbers (`spark/memory_guard.py`), and the
-**Trash** for deleted renders and voices (`app/clear.py`).
-
 ## Fish Audio Drama 3 — Built with Fish Audio
 
 The optional narrator engine uses **Fish Audio Drama 3** ([fishaudio/drama-3](https://huggingface.co/fishaudio/drama-3)), licensed

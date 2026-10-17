@@ -75,10 +75,8 @@ def ensure_comfy():
 
 
 # ── the memory guard: the floor under a render ──────────────────────────────────────────────────────────────────────────────────────
-# Idea and numbers from drowzeys/keys-Wasserman-Slate-AI-Studio-powered-by-TensorFold (spark/memory_guard.py, Apache-2.0); written for this
-# studio. The Spark's GPU and system share one pool: a render that overruns it makes the whole box stop answering (their worker: 40.9 GB
-# available -> unreachable in 12 s). While a studio render runs, MemAvailable is read 4x/s: under MEM_FLOOR_GIB, or falling fast enough to
-# cross MEM_CRIT_GIB within a second -> ComfyUI is interrupted and the job fails with the reason; under MEM_CRIT_GIB ComfyUI is also stopped
+# The Spark's GPU and system share one pool: a render that overruns it makes the whole box stop answering. While a studio render runs,
+# MemAvailable is read 4x/s: under MEM_FLOOR_GIB, or falling fast enough to cross MEM_CRIT_GIB within a second -> ComfyUI is interrupted and the job fails with the reason; under MEM_CRIT_GIB ComfyUI is also stopped
 # outright (COMFY_SERVICE; the next job starts it again). ComfyUI is also marked the kernel's first choice if memory runs out all the same.
 MEM_FLOOR_GIB, MEM_CRIT_GIB = C.MEM_FLOOR_GIB, C.MEM_CRIT_GIB; RUNNING = {"pid": None, "stop": ""}
 
@@ -745,7 +743,7 @@ def run_voice(job):
     job["outputs"] = [{"file": "preview.wav", "kind": "voice"}, {"file": "ref.wav", "kind": "reference"}]; job["voice"] = v
 
 
-# ── the Trash (idea from drowzeys/keys-Wasserman-Slate-AI-Studio-powered-by-TensorFold app/clear.py, Apache-2.0; written for this studio) ──
+# ── the Trash: deleted renders and voices wait here until restored or emptied ──
 def _trash_put(kind, iid, src, record):
     tid = f"{kind}-{iid}"; d = f"{TRASH}/{tid}"
     if os.path.exists(d): d = f"{d}-{int(time.time())}"; tid = os.path.basename(d)
@@ -1254,9 +1252,8 @@ def run_export(job):
 
 
 def noise_seed(seed, pictures):
-    """(idea from drowzeys/keys-Wasserman-Slate-AI-Studio-powered-by-TensorFold edit_plan.py, Apache-2.0): an edit's noise is drawn for the seed AND the
-    bytes of every input picture. With the plain seed, an edit whose seed equals the one its source was made with starts from that picture's
-    own noise and walks back to it (their run: 12 of 71 such edits came back as the source with doubled contrast). Same seed + same pictures +
+    """an edit's noise is drawn for the seed AND the bytes of every input picture. With the plain seed, an edit whose seed equals the one
+    its source was made with starts from that picture's own noise and walks back to it. Same seed + same pictures +
     same prompt still gives the same result. 48 bits so it travels as a whole number."""
     import hashlib
     h = hashlib.sha256(f"studio-edit:{int(seed)}".encode())

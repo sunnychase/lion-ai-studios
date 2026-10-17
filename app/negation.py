@@ -1,48 +1,117 @@
-"""negation.py — things a prompt names in order to forbid them ("no photographs", "without a cut", "never look at the camera").
+"""negation.py — phrases where a prompt names something in order to forbid it.
 
-Adapted from drowzeys/keys-Wasserman-Slate-AI-Studio-powered-by-TensorFold (app/negation.py, Apache-2.0, commit 0677c2c); modified for Lion AI
-Studios (our own sentences, our field names). See NOTICE.md.
+The studio's video and image models run without a negative prompt, and they tend to show whatever a prompt names: "no cars"
+puts cars in the street, "never look at the camera" invites a look at the camera. This module finds such phrases so the page
+can warn before a render ("say what is there instead").
 
-MiniMax H3 / FastH3 run here at CFG 1 (distilled: the empty side of the guidance is never used), and the image models run at CFG 1 too, so every
-word of a prompt is something to show: a prompt that says "no photographs" tends to hang photographs on the wall, "no cut" does not stop cuts.
-`check` lists such phrases so the page can show them before the job is queued. Nothing here changes the user's prompt.
+    find(text, limit=8)  -> [{"phrase": "no photographs", "thing": "photographs"}, ...]
+    check(text)          -> {"negations": [...], "reason": "..." or ""}
+
+Standard library only. Words inside double quotes are dialogue and are left alone; idioms such as "no doubt", "not only",
+"no matter" and "no more than" are skipped.
 """
 import re
 
-REASON = ("The video and image models here have no negative prompt: a thing the prompt names tends to appear, even when the prompt says there "
-          "is none of it. Take the words out and say what is there instead (\"plain dark walls\" for \"no photographs\").")
-OWN = ("Nobody speaks.", "No voices, no speech.", "No speech.")            # sentences the studio may still pass through on purpose
-IDIOMS = ("not only", "no doubt", "no matter", "not just", "no longer than", "no more than", "no less than", "no sooner")
-WORD = r"[A-Za-z][A-Za-z'’-]*"
-FOUND = re.compile(r"(?<![A-Za-z'’-])(no one|nobody|no|not|never|without|none of|neither|nor|cannot|" + WORD + r"n['’]t)"
-                   r"(?![A-Za-z'’-])((?:[ \t]+" + WORD + r"){0,4})", re.IGNORECASE)
-FILLER = {"a", "an", "the", "any", "of", "to", "be", "is", "are", "at", "in", "on", "it", "its", "their", "his", "her", "and", "or",
-          "ever", "one", "other", "more", "new", "appear", "appears", "anywhere", "there", "that", "this", "with", "for", "into", "from"}
+REASON = ("These phrases name something in order to forbid it. The models run without a negative prompt and tend to show what "
+          "a prompt names, so describe what is there instead (\"an empty street\", \"one continuous shot\").")
+
+# words that open a forbidding phrase; "n't" verbs (don't, isn't, can't...) are matched separately
+OPENERS = {"no", "not", "never", "without", "nobody", "none", "nothing", "neither", "nor", "cannot", "nowhere"}
+PEOPLE = {"nobody", "no one", "no-one"}
+
+# opener + following word(s) that are figures of speech, not a forbidden thing
+IDIOMS = (
+    "no doubt", "no matter", "no more than", "no less than", "no longer", "no sooner", "no wonder", "no way of",
+    "not only", "not just", "not until", "not to mention", "not least", "not quite", "not too", "not very", "not so",
+    "not really", "not yet", "nothing but", "nothing less than", "nothing more than", "none other than", "never mind",
+    "never before", "without a doubt", "without fail", "can't help", "cannot help", "neither here nor there",
+)
+
+# a phrase stops at clause punctuation, at these words, or after MAX_WORDS
+STOPS = {"and", "but", "while", "so", "then", "because", "which", "that", "as", "when", "until", "where", "though", "although",
+         "yet", "instead", "rather", "only", "just", "except"}
+MAX_WORDS = 5
+LEADING = {"a", "an", "any", "the", "one", "single", "some", "more", "other"}
+
+_QUOTED = re.compile(r"\"[^\"\n]*\"|“[^”\n]*”")
+_CLAUSES = re.compile(r"[.!?;:,()\[\]\n—–]+|\s-\s")
+_TOKEN = re.compile(r"[a-z0-9]+(?:['’][a-z]+)*(?:-[a-z0-9]+)*")
 
 
-def find(text, limit=8):
-    """the negated things in text: [{phrase, thing}] in reading order, each phrase once"""
-    for own in OWN:
-        text = re.sub(re.escape(own), " ", text, flags=re.IGNORECASE)
+def _is_opener(tok: str) -> bool:
+    return tok in OPENERS or tok.endswith("n't") or tok.endswith("n’t")
+
+
+def _idiom_at(toks: list, i: int) -> bool:
+    for idiom in IDIOMS:
+        parts = idiom.split()
+        if toks[i:i + len(parts)] == parts:
+            return True
+    return False
+
+
+def _phrases(clause: str):
+    toks = [t.replace("’", "'") for t in _TOKEN.findall(clause.lower())]
+    i = 0
+    while i < len(toks):
+        t = toks[i]
+        two = " ".join(toks[i:i + 2])
+        if two in ("no one", "no-one") or t == "no-one":
+            opener, start = two if t == "no" else t, i + (2 if t == "no" else 1)
+        elif _is_opener(t):
+            opener, start = t, i + 1
+        else:
+            i += 1
+            continue
+        if _idiom_at(toks, i):
+            i = start
+            continue
+        rest = []
+        for w in toks[start:]:
+            if w in STOPS or _is_opener(w) or len(rest) >= MAX_WORDS:
+                break
+            rest.append(w)
+        if opener == "nor" and not rest:
+            i = start
+            continue
+        if not rest and opener not in PEOPLE and opener not in ("nobody", "nothing", "none"):
+            i = start                                  # a bare "No," or "not." forbids nothing in particular
+            continue
+        thing = list(rest)
+        while thing and thing[0] in LEADING:
+            thing.pop(0)
+        if opener in PEOPLE or opener == "nobody":
+            thing_text = "people" + (" " + " ".join(thing) if thing else "")
+        else:
+            thing_text = " ".join(thing) or opener
+        yield " ".join([opener] + rest), thing_text
+        i = start + len(rest)
+
+
+def find(text: str, limit: int = 8) -> list:
+    """the forbidding phrases in TEXT, in order, without repeats: [{"phrase", "thing"}]"""
+    if not text:
+        return []
+    plain = _QUOTED.sub(" . ", text)
     out, seen = [], set()
-    for m in FOUND.finditer(text):
-        neg, rest = m.group(1), m.group(2).split()
-        if any((neg + " " + " ".join(rest)).lower().startswith(i) for i in IDIOMS): continue
-        kept, thing = [], []
-        for w in rest:
-            kept.append(w)
-            if w.lower() not in FILLER: thing.append(w)
-            if len(thing) == 3: break
-        if not thing and neg.lower() not in ("nobody", "no one"): continue
-        while kept and kept[-1].lower() in FILLER: kept.pop()
-        phrase = " ".join([neg, *kept])
-        if phrase.lower() in seen: continue
-        seen.add(phrase.lower()); out.append({"phrase": phrase, "thing": " ".join(thing)})
-        if len(out) == limit: break
+    for clause in _CLAUSES.split(plain):
+        for phrase, thing in _phrases(clause):
+            if phrase in seen:
+                continue
+            seen.add(phrase)
+            out.append({"phrase": phrase, "thing": thing})
+            if len(out) >= limit:
+                return out
     return out
 
 
-def check(text):
+def check(text: str) -> dict:
     """what the page shows: {negations, reason}"""
-    found = find(text or "")
+    found = find(text)
     return {"negations": found, "reason": REASON if found else ""}
+
+
+if __name__ == "__main__":
+    import json
+    import sys
+    print(json.dumps(check(" ".join(sys.argv[1:]) or sys.stdin.read()), indent=1))

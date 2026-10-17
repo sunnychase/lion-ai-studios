@@ -147,6 +147,13 @@ Qwen3-TTS takes. It runs on TensorFold's native CUDA port, which you build once,
 are under the Fish Audio Community License: free for research and non-commercial use, commercial use only under US$500,000 annual
 revenue, never as a hosted voice service without Fish Audio's licence, and only with consent for real people's voices.
 
+**Fast server (new 2026-10-16, testing):** with [drama-tensorfold](https://github.com/plotarmordev/drama-tensorfold) built, the studio
+starts an on-demand loopback speech server for a Drama 3 voice-over (it needs about 88 GiB free to load), makes each cloned voice a voice
+file once, speaks every line through it with the same Whisper check, and stops it when idle. On a DGX Spark the server was ready in 10 s
+and a cloned 18-word line came back word-perfect in about 19 s including the check (the per-take build: about 39 s). If it fails, the
+per-take build and then Qwen3-TTS take over, with the reason in the job notes. drama-tensorfold is **testing, not qualified** (not all of
+its accuracy bars against the reference are met); setup and status: [docs/DRAMA3.md](docs/DRAMA3.md#fast-server-drama-tensorfold).
+
 ## Samples
 
 All of these were made with this repo on one DGX Spark. Prompts and settings are in [samples/README.md](samples/README.md).
@@ -187,6 +194,7 @@ One DGX Spark, 5 s clip with sound, single runs (n = 1). Details and caveats are
 | FLUX 3 Image Klein, prompt upsampler included: 1344x768 cold / 1024x1024 / 832x1216; edit with 1 / 2 references | 28.7 s / 20.7–22.6 s / 21.6 s; 35.0 / 59.0 s (n = 1 each; [details](docs/BENCHMARKS.md#15-flux-3-image-klein-2026-10-15)) |
 | Ming-Image 0.1 Design, 1024x1024 | ~5.5 min per job (4.6 min of it loading), +22 s per extra image |
 | Voice clone from a 5 s clip / ~30 s narration (Qwen3-TTS) | 67 s / 56 s, i.e. 0.59x realtime (1.3x with the model loaded) |
+| Fish Audio Drama 3, a cloned 18-word line incl. the Whisper check: fast server (drama-tensorfold) / per-take build | ~19 s (server ready in 10 s) / ~39 s (n = 1) |
 | Cast (reference to video, official 20 steps), 5 s: Draft 480p / Fast HD | 328 s / 979 s |
 | Qwen-Image 2.1 Turbo, 1024x1024, warm: ComfyUI / Fast (LocalRouter) | 9.3 s / 6.2 s (n = 12 each; [details](docs/FAST_IMAGES.md#measured)) |
 | ACE-Step 1.5 Turbo, 30–60 s of music | 4–16 s (3.8–7.5x realtime) |
@@ -265,7 +273,7 @@ voice. Read [docs/RESPONSIBLE_USE.md](docs/RESPONSIBLE_USE.md).
 | [docs/DIRECTOR.md](docs/DIRECTOR.md) | setting up the director (TensorFold recipe or any OpenAI-compatible server) |
 | [docs/MING.md](docs/MING.md) | the optional Ming-Image 0.1 Design model: weights, code and venv |
 | [docs/FAST_IMAGES.md](docs/FAST_IMAGES.md) | the optional Fast image engine (LocalRouter) and the memory broker |
-| [docs/DRAMA3.md](docs/DRAMA3.md) | the optional Fish Audio Drama 3 voice engine: licence, weights, building the TensorFold engine on a Spark |
+| [docs/DRAMA3.md](docs/DRAMA3.md) | the optional Fish Audio Drama 3 voice engine: licence, weights, the drama-tensorfold fast server, building the TensorFold engine on a Spark |
 | [tensorfold/README.md](tensorfold/README.md) | the optional TensorFold engine for FastH3 |
 | [docs/BENCHMARKS.md](docs/BENCHMARKS.md) | full benchmark tables, methods and limitations ([raw results](benchmarks/)) |
 | [docs/RESPONSIBLE_USE.md](docs/RESPONSIBLE_USE.md) | consent, copyright and labelling |
@@ -282,7 +290,7 @@ app/               the studio: web server (stdlib only), ComfyUI graphs, directo
 comfyui_nodes/     Lion AI Studios image node for ComfyUI (one menu for eleven image models)
 tensorfold/        optional TensorFold engine: setup notes + a small patch
 scripts/           install ComfyUI, download models, helper envs, systemd units, the repository checks (check.sh)
-systemd/           unit templates (studio, ComfyUI, optional director, optional LocalRouter example)
+systemd/           unit templates (studio, ComfyUI, optional director, optional LocalRouter and Drama 3 server examples)
 docs/              models, director, Ming-Image, Fast images, benchmarks, responsible use, screenshots
 benchmarks/        raw results and the scripts that produced them
 samples/           example videos, images and music made with the studio

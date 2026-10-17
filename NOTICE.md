@@ -57,6 +57,15 @@ License, Version 1.0. Copyright © 39 AI, INC. All Rights Reserved."
 The engine is TensorFold's native CUDA port on the `drama3-cuda` branch of drowzeys/TensorFold (Apache-2.0, see above). Converting the
 codec needs Fish's reference codec code; this studio's build used the copy vendored in
 [sgl-project/sglang-omni](https://github.com/sgl-project/sglang-omni) (Apache-2.0), not redistributed here.
+
+The optional fast server is **drama-tensorfold** ([plotarmordev/drama-tensorfold](https://github.com/plotarmordev/drama-tensorfold),
+Apache-2.0, used at `3f44a09c`): patches to [ashhart/TensorFold](https://github.com/ashhart/TensorFold) (Apache-2.0) and its launcher
+`recipe/pilot.py`. Not redistributed; the studio runs it as a separate process (`systemd/studio-drama3.service.example`) and talks to
+it over HTTP on loopback, and calls its `tools/zig/drama_voice.py` to make voice files. That tool uses Fish's reference encoder from
+[sgl-project/sglang-omni](https://github.com/sgl-project/sglang-omni) at `ab095ef9` (Apache-2.0), also not redistributed. The
+voice-file venv (`requirements/drama3-voice.txt`) installs, among others, **descript-audiotools** and **descript-audio-codec**
+([descriptinc](https://github.com/descriptinc), MIT), **hydra-core** (MIT), sglang (Apache-2.0) and transformers (Apache-2.0), each
+under its own licence.
 - **Models**: see [docs/MODELS.md](docs/MODELS.md). Several restrict commercial use.
 - **README and repository-template layout** adapted from [morluto/rea](https://github.com/morluto/rea) (MIT): the structure
   only; the wording is this project's own.

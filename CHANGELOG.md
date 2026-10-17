@@ -2,6 +2,23 @@
 
 Updates to Lion AI Studios, newest first. The project has no version numbers; each entry is dated.
 
+## 2026-10-16 (second update) — Fish Audio Drama 3 fast server (drama-tensorfold)
+
+- **Drama 3 through a speech server.** With [plotarmordev/drama-tensorfold](https://github.com/plotarmordev/drama-tensorfold)
+  (Apache-2.0, tested at `3f44a09c`; ashhart/TensorFold `c7137bb3` plus its patches, built with its `scripts/build-engine.sh`)
+  set up, a Drama 3 voice-over: runs the optional fetch hook if the weights are missing → asks ComfyUI to unload → makes the
+  cloned voice's voice file once (`voice.py voice3`: the engine tree's `tools/zig/drama_voice.py` with sglang-omni `ab095ef9`'s
+  encoder) → starts the server unit (its launcher needs ~88 GiB free; the studio frees only its own holders) → speaks each line
+  with the references inline (`voice.py say3s`), Whisper-checked, re-drawn on missing words or a `length` / `silence` finish.
+  The unit is stopped after `DRAMA3_IDLE_S`. Fallbacks: the per-take build, then Qwen3-TTS, each with the reason in the notes.
+  Tested on a DGX Spark: server ready in 10 s, a cloned 18-word line word-perfect in ~19 s including Whisper (per-take ~39 s),
+  lowest free memory 69 GiB. drama-tensorfold's status is **testing, not qualified**.
+- New `app/drama3.py` (every Drama 3 path in one place, and the unit's launcher), `systemd/studio-drama3.service.example`,
+  `requirements/drama3-voice.txt` (pinned, install with `--no-deps`), docs/DRAMA3.md "Fast server (drama-tensorfold)".
+- New settings: `DRAMA3_SERVER_DIR`, `DRAMA3_ENGINE_BIN`, `DRAMA3_PORT` (18793), `DRAMA3_VOICE_ENV_PY`, `DRAMA3_SGLANG_OMNI_DIR`,
+  `DRAMA3_SERVICE`, `DRAMA3_GPU_LOCK`, `DRAMA3_IDLE_S`, and `DRAMA3_FETCH_CMD` (an optional fetch hook for the weights).
+- The narrator's menu now offers Drama 3 when either engine is built and the weights are present (or the fetch hook is set).
+
 ## 2026-10-16 — Voices for everyone who speaks, Fish Audio Drama 3, shot and word checks, Trash, memory guard
 
 Several of these come from [drowzeys/keys-Wasserman-Slate-AI-Studio-powered-by-TensorFold-built-with-integrated-Fish-Audio-Drama3](https://github.com/drowzeys/keys-Wasserman-Slate-AI-Studio-powered-by-TensorFold-built-with-integrated-Fish-Audio-Drama3)
